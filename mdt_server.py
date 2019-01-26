@@ -1,3 +1,5 @@
+import uuid
+
 from flask import Flask, request, jsonify
 import pymongo
 
@@ -17,38 +19,43 @@ patient_meeting_data_col = db["patient_meeting_data"]
 
 @app.route('/meetings')  # FIXME: Remove during deployment
 def __get_meetings__():
-    all_meetings = meeting_col.find()
+    all_meetings = list(meeting_col.find())
+    print(all_meetings)
     return jsonify(all_meetings)
 
 
 @app.route('/meeting/<meeting_id>')
 def get_meeting(meeting_id):
     # TODO: Permission
-    meeting_col.find({"_id": meeting_id})
+    meeting = meeting_col.find_one({"_id": meeting_id})
+    return jsonify(meeting)
 
 
 @app.route('/meeting', methods=['POST'])
 def create_meeting():
+    # TODO: validate using JSON schema (Using Mongo validator)
     meeting = request.get_json(silent=True)
-    mid = meeting_col.insert_one(meeting)  # TODO: validate using JSON schema (Using Mongo validator)
-    log("Inserted a new meeting: " + mid)
+    # TODO: Think about meeting id
+    new_meeting_id = str(uuid.uuid4())
+    meeting["_id"] = new_meeting_id
+    res = meeting_col.insert_one(meeting)
+    log("Inserted a new meeting: " + new_meeting_id)
     # TODO: Error handling
-    # TODO: Think about meeting id - ?
-    return mid
+    return jsonify({"_id": new_meeting_id})
 
 
 @app.route('/meeting/<meeting_id>', methods=['PUT'])
 def update_meeting(meeting_id):
     # TODO: Error handling
     meeting = request.get_json(silent=True)
-    done = meeting_col.update_one({"_id" : meeting_id}, meeting)
+    done = meeting_col.update_one({"_id": meeting_id}, {'$set': meeting})
     log("Updated meeting data: ", meeting_id)
-    return
+    return "updated"
 
 
 @app.route('/meeting/<meeting_id>/patient/<patient_id>')
 def get_patient_meeting_data(meeting_id, patient_id):
-    patient_meeting_data = patient_meeting_data_col.find({"_id": patient_id, "meeting_id": meeting_id})
+    patient_meeting_data = patient_meeting_data_col.find_one({"_id": patient_id, "meeting_id": meeting_id})
     return jsonify(patient_meeting_data)
 
 
@@ -56,56 +63,65 @@ def get_patient_meeting_data(meeting_id, patient_id):
 def update_patient_meeting_data(meeting_id, patient_id):
     # TODO: Error handling
     patient_meeting_data = request.get_json(silent=True)
-    done = patient_meeting_data_col.update_one({"meeting_id": meeting_id, "patient_id": patient_id}, patient_meeting_data)
+    done = patient_meeting_data_col.update_one({"meeting_id": meeting_id, "patient_id": patient_id}, {'$set': patient_meeting_data})
     log("Updated patient-meeting data: ", meeting_id, patient_id)
-    return
+    return "updated"
+
+
+@app.route('/events')  # FIXME: Remove during deployment
+def __get_all_events__():
+    all_events = list(events_col.find())
+
+    return jsonify(all_events)
 
 
 @app.route('/event/<event_id>')
 def get_event(event_id):
-    events = meeting_col.find({"_id": event_id})
+    events = events_col.find_one({"_id": event_id})
     return jsonify(events)
 
 
 @app.route('/event', methods=['POST'])
 def create_event():
     event = request.get_json(silent=True)
-    eid = events_col.insert_one(event)  # TODO: validate using JSON schema (Using Mongo validator)
-    log("Inserted a new event: " + eid)
+    new_event_id = str(uuid.uuid4())
+    event["_id"] = new_event_id
+    res = events_col.insert_one(event)  # TODO: validate using JSON schema (Using Mongo validator)
+    log("Inserted a new event: " + new_event_id)
+    return  jsonify({"_id": new_event_id})
 
 
 @app.route('/event/<event_id>', methods=['PUT'])
 def update_event(event_id):
     event = request.get_json(silent=True)
-    done = events_col.update_one({"_id": event_id}, event)
+    done = events_col.update_one({"_id": event_id}, {'$set': event})
     log("Updated event: ", event_id)
-
-
-@app.route('/staff/<staff_id>')
-def get_patient(staff_id):
-    staff = staff_col.find({"_id": staff_id})
-    return jsonify(staff)
-
-
-@app.route('/events')  # FIXME: Remove during deployment
-def __get_all_events__():
-    all_events = events_col.find()
-
-    return jsonify(all_events)
+    return "updated"
 
 
 @app.route('/patients')
-def get_patients():
-    all_patients = patient_col.find()
+def get_all_patients():
+    all_patients = list(patient_col.find())
 
     return jsonify(all_patients)
 
 
-@app.route('/staff')
-def get_staff():
-    all_staff = staff_col.find()
+@app.route('/patient/<patient_id>')
+def get_patient(patient_id):
+    patient = patient_col.find_one({"_id": patient_id})
+    return jsonify(patient)
 
+
+@app.route('/staff')
+def get_all_staff():
+    all_staff = list(staff_col.find())
     return jsonify(all_staff)
+
+
+@app.route('/staff/<staff_id>')
+def get_staff(staff_id):
+    staff = staff_col.find_one({"_id": staff_id})
+    return jsonify(staff)
 
 
 def log(*args, **kwargs):
