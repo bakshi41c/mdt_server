@@ -1,0 +1,31 @@
+{
+  "definitions": {},
+  "$schema": "http://ucl.ac.uk/gosh/event_content_poll_schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_content_poll_schema.json",
+  "type": "object",
+  "title": "The Poll Content Schema",
+  "required": [
+    "question",
+    "options"
+  ],
+  "properties": {
+    "patient": {
+      "$id": "#/properties/patient",
+      "type": "string",
+      "title": "Patient ID"
+    },
+    "question": {
+      "$id": "#/properties/question",
+      "type": "string",
+      "title": "The Question",
+      "description": "The question of the poll"
+    },
+    "options": {
+      "$id": "#/properties/options",
+      "type": "array",
+      "title": "Options for the poll",
+      "default": null,
+      "minItems": 2
+    }
+  }
+}

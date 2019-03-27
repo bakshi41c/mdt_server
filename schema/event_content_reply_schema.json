@@ -1,0 +1,17 @@
+{
+  "definitions": {},
+  "$schema": "http://ucl.ac.uk/gosh/event_content_reply_schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_content_reply_schema.json",
+  "type": "object",
+  "title": "The Reply Content Schema",
+  "properties": {
+    "reply": {
+      "$id": "#/properties/reply",
+      "type": "string",
+      "title": "The Reply to a comment"
+    }
+  },
+  "required": [
+    "reply"
+  ]
+}

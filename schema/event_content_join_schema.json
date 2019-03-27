@@ -1,0 +1,20 @@
+{
+  "definitions": {},
+  "$schema": "http://ucl.ac.uk/gosh/event_content_join_schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_content_join_schema.json",
+  "type": "object",
+  "title": "The Join Content Schema",
+  "required": [
+    "otp"
+  ],
+  "properties": {
+    "otp": {
+      "$id": "#/properties/otp",
+      "type": "string",
+      "title": "OTP",
+      "examples": [
+        "4256"
+      ]
+    }
+  }
+}

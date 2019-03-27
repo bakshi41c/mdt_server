@@ -1,0 +1,23 @@
+{
+  "definitions": {},
+  "$schema": "http://ucl.ac.uk/gosh/event_content_comment_schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_content_comment_schema.json",
+  "type": "object",
+  "title": "The Comment Content Schema",
+  "properties": {
+    "patient": {
+      "$id": "#/properties/patient",
+      "type": "string",
+      "title": "The Patient ID",
+      "description": "The patient for which this comment applies [optional]"
+    },
+    "comment": {
+      "$id": "#/properties/comment",
+      "type": "string",
+      "title": "The Comment"
+    }
+  },
+  "required": [
+    "comment"
+  ]
+}

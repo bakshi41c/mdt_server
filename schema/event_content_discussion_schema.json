@@ -1,0 +1,18 @@
+{
+  "definitions": {},
+  "$schema": "http://ucl.ac.uk/gosh/event_content_discussion_schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_content_discussion_schema.json",
+  "type": "object",
+  "title": "The Discussion Content Schema",
+  "properties": {
+    "patient": {
+      "$id": "#/properties/patient",
+      "type": "string",
+      "title": "The Patient ID",
+      "description": "The ID of the patient being discussed"
+    }
+  },
+  "required": [
+    "patient"
+  ]
+}

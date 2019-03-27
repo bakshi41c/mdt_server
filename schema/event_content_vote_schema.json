@@ -1,0 +1,18 @@
+{
+  "definitions": {},
+  "$schema": "http://ucl.ac.uk/gosh/event_content_vote_schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_content_vote_schema.json",
+  "type": "object",
+  "title": "The Vote Content Schema",
+  "required": [
+    "vote"
+  ],
+  "properties": {
+    "vote": {
+      "$id": "#/properties/vote",
+      "type": "string",
+      "title": "Vote",
+      "description": "The vote that is being casted"
+    }
+  }
+}

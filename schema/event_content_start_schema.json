@@ -1,0 +1,21 @@
+{
+  "definitions": {},
+  "$schema": "http://ucl.ac.uk/gosh/event_content_start_schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_content_start_schema.json",
+  "type": "object",
+  "title": "The Start Content Schema",
+  "default": null,
+  "required": [
+    "otp"
+  ],
+  "properties": {
+    "otp": {
+      "$id": "#/properties/otp",
+      "type": "string",
+      "title": "OTP",
+      "examples": [
+        "4256"
+      ]
+    }
+  }
+}

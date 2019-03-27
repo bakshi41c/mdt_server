@@ -1,0 +1,86 @@
+{
+  "definitions": {},
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_schema.json",
+  "type": "object",
+  "title": "Meeting Event Schema",
+  "required": [
+    "by",
+    "meetingId",
+    "eventId",
+    "timestamp",
+    "type"
+  ],
+  "properties": {
+    "by": {
+      "$id": "#/properties/by",
+      "type": "string",
+      "title": "By",
+      "description": "Public key of sender"
+    },
+    "meetingId": {
+      "$id": "#/properties/meetingId",
+      "type": "string",
+      "title": "Meeting Id"
+    },
+    "eventId": {
+      "$id": "#/properties/eventId",
+      "type": "string",
+      "title": "Event ID",
+      "description": "Signature of the event by the sender"
+    },
+    "timestamp": {
+      "$id": "#/properties/timestamp",
+      "type": "number",
+      "title": "Timestamp",
+      "description": "The Unix Timestamp of the event",
+      "default": 0,
+      "examples": [
+        "1552875911"
+      ]
+    },
+    "type": {
+      "$id": "#/properties/type",
+      "type": "string",
+      "enum": [
+        "start",
+        "join",
+        "leave",
+        "poll",
+        "pollEnd",
+        "vote",
+        "comment",
+        "reply",
+        "discussion",
+        "disagreement",
+        "patientDataChange",
+        "ack",
+        "joinAck",
+        "pollEndAck",
+        "ackError",
+        "end"
+      ],
+      "title": "EventType",
+      "description": "The type of event",
+      "examples": [
+        "start"
+      ]
+    },
+    "room": {
+      "$id": "#/properties/room",
+      "type": "string",
+      "title": "The Room ID"
+    },
+    "refEvent": {
+      "$id": "#/properties/refEvent",
+      "type": "string",
+      "title": "The Reference Event",
+      "description": "All events apart from start must refer a previous event"
+    },
+    "content": {
+      "$id": "#/properties/content",
+      "type": "object",
+      "title": "The Content"
+    }
+  }
+}

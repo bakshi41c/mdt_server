@@ -1,0 +1,32 @@
+{
+  "definitions": {},
+  "$schema": "http://ucl.ac.uk/gosh/event_content_patientDataChange_schema#",
+  "$id": "http://ucl.ac.uk/gosh/event_content_patientDataChange_schema.json",
+  "type": "object",
+  "title": "The Patient Data Change Content Schema",
+  "properties": {
+    "patient": {
+      "$id": "#/properties/patient",
+      "type": "string",
+      "title": "The Patient ID",
+      "description": "The ID of the patient who's data is being changed"
+    },
+    "from": {
+      "$id": "#/properties/from",
+      "type": "string",
+      "title": "From data",
+      "description": "Snapshot of data before change"
+    },
+    "to": {
+      "$id": "#/properties/to",
+      "type": "string",
+      "title": "To data",
+      "description": "Snapshot of data after change"
+    }
+  },
+  "required": [
+    "patient",
+    "from",
+    "to"
+  ]
+}
