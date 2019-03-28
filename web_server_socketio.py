@@ -1,7 +1,7 @@
 import json
 import time
 
-from flask_socketio import send as send_ws, close_room
+from flask_socketio import close_room
 from flask_socketio import emit as emit_ws
 from flask_socketio import join_room, leave_room
 from flask import Flask
@@ -162,7 +162,8 @@ def end(event, staff, meeting, roles):
     meeting_session_details = ongoing_meetings[meeting["_id"]]
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"], content=meeting_session_details["unref_events"].keys())
+    ack = get_ack(event["eventId"], event["meetingId"], content={"details":  {
+            json.dumps(list(meeting_session_details["unref_events"].keys()))}})
 
     return True, ack
 
@@ -614,6 +615,9 @@ def room_message(event):
         if end_meeting:
             save_all_events_into_db(meeting)
             # write_to_smart_contract
+            print ('============= END =============')
+            print (ongoing_meetings[meeting["_id"]]["start_event"]["_id"])
+            print(ack_event)
             close_room(meeting["_id"])
 
         # Send the ack event to the user privately as well
