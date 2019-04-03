@@ -34,6 +34,7 @@ ongoing_meetings = {}
 
 
 def start(event, staff, meeting, roles) -> (bool, dict):
+    log.debug("Processing Start event")
     # Check if the user is allowed to start
     if Role.HOST not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -80,6 +81,7 @@ def start(event, staff, meeting, roles) -> (bool, dict):
 
 
 def join(event, staff, meeting, roles) -> (bool, dict):
+    log.debug("Processing Join event")
     # Check if the user is allowed to join
     if Role.PARTICIPANT not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -125,6 +127,7 @@ def join(event, staff, meeting, roles) -> (bool, dict):
 
 
 def leave(event, staff, meeting):
+    log.debug("Processing Leave event")
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
     if not ok:
@@ -158,6 +161,7 @@ def leave(event, staff, meeting):
 
 
 def end(event, staff, meeting, roles):
+    log.debug("Processing End event")
     # Check whether they should be allowed to end
     if Role.HOST not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -183,12 +187,13 @@ def end(event, staff, meeting, roles):
 
     # ACK
     ack = get_ack(event["eventId"], event["meetingId"], content={"details":  {
-            json.dumps(list(meeting_session_details["unref_events"].keys()))}})
+            list(meeting_session_details["unref_events"].keys())}})
 
     return True, ack
 
 
 def poll(event, staff, meeting, roles):
+    log.debug("Processing Poll event")
     # Check whether they should be allowed to start a poll
     if Role.HOST not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -213,7 +218,7 @@ def poll(event, staff, meeting, roles):
     meeting_session_details = ongoing_meetings.get(meeting["_id"], None)
     meeting_session_details["polls"][event["eventId"]] = {
         "votes": {},
-        "options": []
+        "options": event["content"]["options"]
     }
 
     # ACK
@@ -222,6 +227,7 @@ def poll(event, staff, meeting, roles):
 
 
 def vote(event, staff, meeting, roles):
+    log.debug("Processing Vote Event")
     # Check whether they should be allowed to vote
     if Role.PARTICIPANT not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -260,6 +266,7 @@ def vote(event, staff, meeting, roles):
                               content={"details": {"errorCode": EventStreamError.ALREADY_VOTED.value}},
                               ack_type=MeetingEventType.ACK_ERR.value)
 
+    log.debug("Adding the vote to votes")
     poll["votes"][event["by"]] = event
 
     # ACK
@@ -268,6 +275,7 @@ def vote(event, staff, meeting, roles):
 
 
 def end_poll(event, staff, meeting, roles):
+    log.debug("Processing End Poll event")
     # Check whether they should be allowed to vote
     if Role.HOST not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -295,7 +303,7 @@ def end_poll(event, staff, meeting, roles):
 
     # ACK
     ack = get_ack(event["eventId"], event["meetingId"],
-                  content={"details": {"votes": json.dumps(list(poll["votes"].values()))}},
+                  content={"details": {"votes": list(poll["votes"].values())}},
                   ack_type=MeetingEventType.ACK_POLL_END.value)
 
     # Delete poll
@@ -305,6 +313,7 @@ def end_poll(event, staff, meeting, roles):
 
 
 def comment_reply_disagreement(event, staff, meeting, roles):
+    log.debug("Processing Comment/Reply/Disagreement event")
     # Check whether they should be allowed to vote
     if Role.PARTICIPANT not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -332,6 +341,7 @@ def comment_reply_disagreement(event, staff, meeting, roles):
 
 
 def discussion(event, staff, meeting, roles):
+    log.debug("Processing Discussion event")
     # Check whether they should be allowed to start discussion
     if Role.HOST not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -359,6 +369,7 @@ def discussion(event, staff, meeting, roles):
 
 
 def patient_data_change(event, staff, meeting, roles):
+    log.debug("Processing PDC event")
     # Check whether they should be allowed to start discussion
     if Role.HOST not in roles:
         return False, get_ack(event["eventId"], event["meetingId"],
@@ -594,6 +605,7 @@ def room_message(event):
     ack_event = None
     ok = False
     end_meeting = False
+    send_privately = False
 
     if event_type == MeetingEventType.START:
         ok, ack_event = start(event, staff, meeting, roles)
@@ -606,6 +618,10 @@ def room_message(event):
 
     if event_type == MeetingEventType.POLL:
         ok, ack_event = poll(event, staff, meeting, roles)
+
+    if event_type == MeetingEventType.VOTE:
+        ok, ack_event = vote(event, staff, meeting, roles)
+        send_privately = True
 
     if event_type == MeetingEventType.POLL_END:
         ok, ack_event = end_poll(event, staff, meeting, roles)
@@ -624,7 +640,7 @@ def room_message(event):
         if ok:
             end_meeting = True
 
-    if not ok:
+    if not ok: # If not ok we send the error ack event privately
         return json.dumps(sign(ack_event))
     else:
         # If an event has been referenced
@@ -637,9 +653,10 @@ def room_message(event):
         # Sign the ack
         signed_ack_event = sign(ack_event)
 
-        # Broadcast event
-        send(json.dumps(event), broadcast_room=meeting["_id"])
-        send(json.dumps(signed_ack_event), broadcast_room=meeting["_id"])
+        if not send_privately:  # Only Broadcast if the send_privately is set to False
+            # Broadcast event
+            send(json.dumps(event), broadcast_room=meeting["_id"])
+            send(json.dumps(signed_ack_event), broadcast_room=meeting["_id"])
 
         record(event, meeting)
         record(signed_ack_event, meeting)
