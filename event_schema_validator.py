@@ -1,9 +1,9 @@
 import json
 from meeting_event import MeetingEventType
 from jsonschema import validate as validate_schema, ValidationError
-import log
+import log as logger
 
-log = log.get_logger('event_schema_validator')
+log = logger.get_logger('event_schema_validator')
 
 with open('schema/event_schema.json') as f:
     event_schema = json.load(f)
@@ -210,7 +210,6 @@ def validate(json_data) -> (bool, str):
 #     "refEvent": "",
 #     "timestamp": 0,
 #     "meetingId": "",
-#     "room": "",
 #     "type": "ack",
 #     "content": {
 #         "ha": "whatever"

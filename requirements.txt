@@ -1,3 +1,6 @@
+web3
+bencode.py
+websockets
 attrs==19.1.0
 Click==7.0
 ecdsa==0.13

@@ -15,7 +15,7 @@ import authentication as auth
 import copy
 from meeting_event import ack_event_template, MeetingEventType
 import event_schema_validator
-import log
+import log as logger
 
 app = Flask(__name__)
 
@@ -26,7 +26,7 @@ CORS(app)
 
 config = config.get_config()
 db = Database(config["database"]["db_name"], config["database"]["ip"], config["database"]["port"])
-log = log.get_logger('web_server_socketio.py')
+log = logger.get_logger('web_server_socketio.py')
 
 timestamp_tolerance = 10  # seconds
 
@@ -49,6 +49,11 @@ def start(event, staff, meeting, roles) -> (bool, dict):
                                                    "errorCode": EventStreamError.UNAUTHORISED.value}},
                               ack_type=MeetingEventType.ACK_ERR.value)
 
+    session_key = event["content"]["key"]
+    sig = event["content"]["sig"]
+
+    # TODO: Check sig with public key of staff from smart contract
+
     # Create the meeting details
     ongoing_meetings[meeting["_id"]] = {
         "otp": event["content"]["otp"],
@@ -59,8 +64,15 @@ def start(event, staff, meeting, roles) -> (bool, dict):
             event["eventId"] : event
         },
         "polls": {},
-        "unref_events": {}  # Events that havent been referenced, needed for when the meeting ends
+        "unref_events": {},  # Events that havent been referenced, needed for when the meeting ends
+        "session_keys" : {
+            staff['_id'] : [session_key]
+        }
     }
+
+    # Set the meeting as started in the db
+    meeting['started'] = True
+    db.update_meeting(meeting['_id'], meeting)
 
     # ACK
     ack = get_ack(event["eventId"], event["meetingId"])
@@ -86,6 +98,14 @@ def join(event, staff, meeting, roles) -> (bool, dict):
         return False, get_ack(event["eventId"], event["meetingId"],
                               content={"details": {"errorCode": EventStreamError.BAD_OTP.value}},
                               ack_type=MeetingEventType.ACK_ERR.value)
+
+
+    session_key = event["content"]["key"]
+    sig = event["content"]["sig"]
+
+    # TODO: Check sig with public key of staff from smart contract
+    meeting_session_details["session_keys"][staff['_id']].append(session_key)
+
 
     # Add user to the participants who have joined
     if staff["_id"] not in meeting_session_details["joined_participants"]:
@@ -401,7 +421,7 @@ def get_ack(ref_event, meeting_id, content=None, ack_type=MeetingEventType.ACK.v
     if content is None:
         content = {}
     ack_event = copy.deepcopy(ack_event_template)
-    ack_event["by"] = 'server'  # TODO: get_public_key_as_string
+    ack_event["by"] = auth.get_public_key_as_hex_string()
     ack_event["refEvent"] = ref_event
     ack_event["timestamp"] = int(time.time())
     ack_event["meetingId"] = meeting_id
@@ -479,9 +499,21 @@ def validate_schema(event) -> (bool, dict):
     return True, None
 
 
-def validate_signature(event) -> (bool, dict):
+def validate_signature(event, staff, meeting) -> (bool, dict):
     # Check Signature of the participant
-    ok = auth.verify_event(event)
+    valid_keys = []
+
+    try:
+        keys_from_meeting = ongoing_meetings[meeting['_id']]['session_keys'][staff['_id']]
+        valid_keys += keys_from_meeting
+    except KeyError as ke:
+        log.warn('No Keys found from meeting ' + str(ke))
+
+    # TODO Get staff addresses from smart contracts
+
+    addr = auth.get_sig_address_from_event(event)
+
+    ok = addr in valid_keys
     if not ok:
         event_id = event.get("eventId", "unknownEventId")
         meeting_id = event.get("meetingId", "unknownMeetingId")
@@ -524,12 +556,6 @@ def room_message(event):
         log.error("======== error_msg: " + errormsg)
         return errormsg
 
-    # Check signature, before trusting anything it says
-    # ok, err_event = validate_signature(event)
-    # if not ok:
-    #     return json.dumps(sign(err_event))
-    #
-
     # Check timestamp
     ok, err_event = validate_timestamp(event)
     if not ok:
@@ -548,6 +574,12 @@ def room_message(event):
         return json.dumps(sign(get_ack(event["eventId"], event["meetingId"],
                                        content={"details": {"errorCode": EventStreamError.MEETING_NOT_FOUND.value}},
                                        ack_type=MeetingEventType.ACK_ERR.value)))
+
+    # Check signature, before trusting anything it says
+    # ok, err_event = validate_signature(event, staff, meeting)
+    # if not ok:
+    #     return json.dumps(sign(err_event))
+    #
 
     # Get the roles
     roles = get_role(staff, meeting)
@@ -642,6 +674,9 @@ class EventStreamError(Enum):
     PATIENT_NOT_FOUND = "patient not found"
     MEETING_ALREADY_STARTED = "meeting already started"
     ALREADY_VOTED = "already voted"
+    BAD_SESSION_KEY_SIGNATURE = "bad session key signature"
+    SESSION_KEY_NOT_FOUND = "session key not found"
+
 
 
 if __name__ == '__main__':
