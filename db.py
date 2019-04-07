@@ -20,12 +20,27 @@ class Database:
     ############
 
     def insert_meeting(self, meeting):
+        # Sanity Check in Staff, so we have only one staff id in staff list and it also includes the host
+        staff = list(meeting["staff"])
+        staff.append(meeting["host"])
+        staff_set = list(set(staff))
+        meeting["staff"] = staff_set
         return self.meeting_col.insert_one(meeting)
 
     def get_meeting(self, meeting_id):
         return self.meeting_col.find_one({"_id": meeting_id})
 
     def update_meeting(self, meeting_id, data):
+        # Sanity Check in Staff, so we have only one staff id in staff list and it also includes the host
+        staff = list(data["staff"])
+        staff.append(data["host"])
+        staff_set = list(set(staff))
+        data["staff"] = staff_set
+
+        # Set id to the meeting_id that was meant to be updated, so we don't overwrite any other meeting
+        data["_id"] = meeting_id
+
+        print(data)
         return self.meeting_col.update_one({"_id": meeting_id}, {'$set': data})
 
     def delete_meeting(self, meeting_id):
@@ -33,6 +48,11 @@ class Database:
 
     def get_all_meetings(self):
         return list(self.meeting_col.find())
+
+    def get_all_meeting(self, staff_id):
+        return self.meeting_col.find(
+            {"staff": staff_id})
+
 
     ###################
     # PATIENT-MEETING #

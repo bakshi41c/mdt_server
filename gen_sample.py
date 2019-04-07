@@ -5,6 +5,7 @@ import math
 from dateutil.relativedelta import relativedelta
 import datetime
 import pymongo
+from web3.auto import w3, Web3
 
 DB_NAME = "mdt_meetings"
 DB_IP = "localhost"
@@ -70,13 +71,11 @@ def gen_patient_data():
 
 
 def gen_staff_data():
-    sid = str(uuid.uuid4())
+    acct = w3.eth.account.create(str(uuid.uuid4()))
     return {
-        "_id": sid,
+        "_id": acct.address,
         "name": first_name[randint(0, len(first_name) - 1)] + " " + last_name[randint(0, len(last_name) - 1)],
         "role": roles[randint(0, len(roles) - 1)],
-        "meetings": []
-
     }
 
 
@@ -124,8 +123,6 @@ staff = [
         "_id": "djfc432",
         "name": "Shubham Bakshi",
         "role": "Student",
-        "meetings": ["g2c1452"]
-
     }
 ]
 

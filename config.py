@@ -1,7 +1,7 @@
 import json
-import log
+import log as logger
 
-log = log.get_logger('config.py')
+log = logger.get_logger('config.py')
 
 
 def get_config():

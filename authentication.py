@@ -1,45 +1,70 @@
-import hashlib
 import bencode
 import log as logpy
-import web3
 import json
 from eth_account.messages import defunct_hash_message
-from web3.auto import w3
-
-server_private_key = None
-server_eth_address = None
+from web3.auto import w3, Web3
 
 log = logpy.get_logger('authentication.log')
-sample_server_eth_key_passphrase = 'leet'
 
-with open('sample_server_eth_key') as keyfile:
-    encrypted_key = keyfile.read()
-    server_private_key = w3.eth.account.decrypt(encrypted_key, sample_server_eth_key_passphrase)
-    keyfilejson = json.loads(encrypted_key)
-    server_eth_address = keyfilejson['address']
+class Auth:
+    def __init__(self, config):
+        self.config = config
+        self.auth_key_path = config["auth"]["key_path"]
+        self.block_chain_provider_url = config["auth"]["bc_provider_url"]
+        self.dee_id_abi_path = config["auth"]["deeid_abi_path"]
 
-def sign_event(event) -> dict:
-    log.debug("Signing event: ")
-    log.debug(event)
-    event.pop("eventId", None)
-    event['by'] = get_public_key_as_hex_string()
-    msg = bencode.encode(event).decode("utf-8")
-    msg_hash = defunct_hash_message(text=msg)
-    signed_message = w3.eth.account.signHash(msg_hash, private_key=server_private_key)
-    event["eventId"] = signed_message['signature'].hex()
-    return event
+        with open(self.auth_key_path) as keyfile:
+            encrypted_key = keyfile.read()
+            keyfilejson = json.loads(encrypted_key)
+            self.server_private_key = w3.eth.account.decrypt(encrypted_key, "leet") # TODO: Ask user for passphrase
+            self.server_eth_address = keyfilejson['address']
+
+        with open(self.dee_id_abi_path) as f:
+            self.dee_id_abi = json.load(f)
+
+        self.w3 = Web3(Web3.HTTPProvider(self.block_chain_provider_url))
+
+    def sign_event(self, event) -> dict:
+        log.debug("Signing event: ")
+        log.debug(event)
+        event.pop("eventId", None)
+        event['by'] = self.get_public_key_as_hex_string()
+        msg = bencode.encode(event).decode("utf-8")
+        msg_hash = defunct_hash_message(text=msg)
+        signed_message = w3.eth.account.signHash(msg_hash, private_key=self.server_private_key)
+        event["eventId"] = signed_message['signature'].hex()
+        return event
 
 
-def get_sig_address_from_event(event) -> bool:
-    signature = event.pop("eventId", None)
-    msg = bencode.encode(event).decode("utf-8")
-    msg_hash = defunct_hash_message(text=msg)
-    eth_account_addr = w3.eth.account.recoverHash(msg_hash, signature=signature)
-    return eth_account_addr.lower()
+    def get_sig_address_from_event(self, event) -> bool:
+        signature = event.pop("eventId", None)
+        msg = bencode.encode(event).decode("utf-8")
+        return self.get_sig_address_from_signature(msg, signature)
 
 
-def get_public_key_as_hex_string():
-    return '0x' + server_eth_address
+    def get_sig_address_from_signature(self, msg, signature):
+        msg_hash = defunct_hash_message(text=msg)
+        eth_account_addr = w3.eth.account.recoverHash(msg_hash, signature=signature)
+        return eth_account_addr.lower()
+
+
+    def get_public_key_as_hex_string(self):
+        return '0x' + self.server_eth_address
+
+
+    def ethkey_in_deeid_contract(self, ethkey, deeid):
+        # TODO: [TEST]
+        return True
+        w3.eth.defaultAccount = self.server_eth_address
+        dee_id_contract = w3.eth.contract(address=deeid, abi=self.dee_id_abi,)
+        len_k = dee_id_contract.functions.lenKeys().call()
+
+        for i in range(0, len_k):
+            key = dee_id_contract.functions.getKey(i).call()
+            if str(key[1]) == str(ethkey):
+                return True
+        return False
+
 
 #
 # ack_event_sample = {

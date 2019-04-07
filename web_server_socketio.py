@@ -1,6 +1,5 @@
 import json
 import time
-
 from flask_socketio import close_room
 from flask_socketio import emit as emit_ws
 from flask_socketio import join_room, leave_room
@@ -11,7 +10,7 @@ from enum import Enum
 from db import Database
 import config
 from authorization import Role, get_role
-import authentication as auth
+import authentication
 import copy
 from meeting_event import ack_event_template, MeetingEventType
 import event_schema_validator
@@ -27,11 +26,9 @@ CORS(app)
 config = config.get_config()
 db = Database(config["database"]["db_name"], config["database"]["ip"], config["database"]["port"])
 log = logger.get_logger('web_server_socketio.py')
-
 timestamp_tolerance = 10  # seconds
-
 ongoing_meetings = {}
-
+auth = authentication.Auth(config)
 
 def start(event, staff, meeting, roles) -> (bool, dict):
     log.debug("Processing Start event")
@@ -50,10 +47,23 @@ def start(event, staff, meeting, roles) -> (bool, dict):
                                                    "errorCode": EventStreamError.UNAUTHORISED.value}},
                               ack_type=MeetingEventType.ACK_ERR.value)
 
-    session_key = event["content"]["key"]
+    new_key = event["content"]["key"]
+    uid = event["content"]["uID"]
+    expiry = event["content"]["expiryTime"]
     sig = event["content"]["sig"]
 
-    # TODO: Check sig with public key of staff from smart contract
+    msg = uid + staff['id'] + expiry + new_key
+
+    addr = auth.get_sig_address_from_signature(msg=msg, signature=sig)
+    ok = auth.ethkey_in_deeid_contract(addr, staff['id'])
+
+    if not ok:
+        return False, get_ack(event["eventId"], event["meetingId"],
+                              content={"details": {
+                                        "errorCode": EventStreamError.UNAUTHORISED.value,
+                                        "message" : "New pubKey cannot be authenticated" }
+                                },
+                              ack_type=MeetingEventType.ACK_ERR.value)
 
     # Create the meeting details
     ongoing_meetings[meeting["_id"]] = {
@@ -67,7 +77,7 @@ def start(event, staff, meeting, roles) -> (bool, dict):
         "polls": {},
         "unref_events": {},  # Events that havent been referenced, needed for when the meeting ends
         "session_keys" : {
-            staff['_id'] : [session_key]
+            staff['_id'] : new_key
         }
     }
 
@@ -102,11 +112,25 @@ def join(event, staff, meeting, roles) -> (bool, dict):
                               ack_type=MeetingEventType.ACK_ERR.value)
 
 
-    session_key = event["content"]["key"]
+    new_key = event["content"]["key"]
+    uid = event["content"]["uID"]
+    expiry = event["content"]["expiryTime"]
     sig = event["content"]["sig"]
 
-    # TODO: Check sig with public key of staff from smart contract
-    meeting_session_details["session_keys"][staff['_id']].append(session_key)
+    msg = uid + staff['id'] + expiry + new_key
+
+    addr = auth.get_sig_address_from_signature(msg=msg, signature=sig)
+    ok = auth.ethkey_in_deeid_contract(addr, staff['id'])
+
+    if not ok:
+        return False, get_ack(event["eventId"], event["meetingId"],
+                              content={"details": {
+                                  "errorCode": EventStreamError.UNAUTHORISED.value,
+                                  "message": "New pubKey cannot be authenticated"}
+                              },
+                              ack_type=MeetingEventType.ACK_ERR.value)
+
+    meeting_session_details["session_keys"][staff['_id']] = new_key
 
 
     # Add user to the participants who have joined
@@ -511,20 +535,20 @@ def validate_schema(event) -> (bool, dict):
 
 
 def validate_signature(event, staff, meeting) -> (bool, dict):
-    # Check Signature of the participant
-    valid_keys = []
-
+    meeting_session_key = None
     try:
-        keys_from_meeting = ongoing_meetings[meeting['_id']]['session_keys'][staff['_id']]
-        valid_keys += keys_from_meeting
+        meeting_session_key = ongoing_meetings[meeting['_id']]['session_keys'][staff['_id']]
     except KeyError as ke:
         log.warn('No Keys found from meeting ' + str(ke))
 
-    # TODO Get staff addresses from smart contracts
+    sig_addr = auth.get_sig_address_from_event(event)
 
-    addr = auth.get_sig_address_from_event(event)
+    ok = False
+    if meeting_session_key is None:
+        ok = auth.ethkey_in_deeid_contract(sig_addr, staff['_id'])
+    else:
+        ok = sig_addr == meeting_session_key
 
-    ok = addr in valid_keys
     if not ok:
         event_id = event.get("eventId", "unknownEventId")
         meeting_id = event.get("meetingId", "unknownMeetingId")
@@ -719,4 +743,3 @@ if __name__ == '__main__':
 # Check if th
 
 # Check if it has room, as its not a mandatory field and not required for every OP, its not part of JSON schema
-# TODO: Think about putting this somewhere else

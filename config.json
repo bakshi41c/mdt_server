@@ -3,5 +3,10 @@
     "ip": "localhost",
     "port" : "27017",
     "db_name" : "mdt_meetings"
+  },
+  "auth" : {
+    "key_path" : "sample_server_eth_key",
+    "bc_provider_url" : "http://127.0.0.1:8545",
+    "deeid_abi_path" : "deeid_abi.json"
   }
 }
