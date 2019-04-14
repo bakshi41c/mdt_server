@@ -64,8 +64,8 @@ def gen_patient_data():
         # Get a random float from 0-20, then subtract that many years from now (in days)
         "dob": str(datetime.datetime.now() - relativedelta(days=math.floor(random.uniform(0, 20) * 365))),
 
-        "hospital_number": randint(0, 50),
-        "infoflex_link": "http://example.com/" + pid,
+        "hospitalNumber": randint(0, 50),
+        "infoflexLink": "http://example.com/" + pid,
 
     }
 
