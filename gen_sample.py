@@ -79,6 +79,12 @@ def gen_staff_data():
     }
 
 
+deeid_user_a = {  # The sample user in the DeeID app
+    "_id": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+    "name": "Shubham Bakshi",
+    "role": "Doctor",
+}
+
 if __name__ == '__main__':
     patients = []
     staff = []
@@ -88,9 +94,9 @@ if __name__ == '__main__':
 
     # print(patients)
     # print(staff)
+    staff_col.insert(deeid_user_a)
     staff_col.insert_many(staff)
     patient_col.insert_many(patients)
-
 
 
 
@@ -123,16 +129,6 @@ staff = [
         "_id": "djfc432",
         "name": "Shubham Bakshi",
         "role": "Student",
-    }
-]
-
-events = [
-    {
-        "_id": "djfc432",
-        "meeting_id": "g2c1452",
-        "type": "poll",
-        "author": "djfc432",  # Staff id
-        "results": ""  # TODO: Figure out how voting will work
     }
 ]
 

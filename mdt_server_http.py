@@ -9,6 +9,9 @@ import authorization
 import jwt
 import time
 
+from model import Meeting
+from model import Staff
+
 app = Flask(__name__)
 CORS(app)
 jwt_exp = 21600 # 6 hours to cover a MDT meeting - Future: Expire every 15 minutes, let client refresh
@@ -56,7 +59,7 @@ def login():
             "token" : token
         })
     else:
-        return "Unable to authenticate signature", 403
+        return "Unable to authenticate signature", 401
 
 
 @app.route('/meetings')
@@ -65,7 +68,7 @@ def get_meetings():
     print('Auth Header: ' + auth_header)
     staff = get_staff_from_auth_header(auth_header)
     if staff is None:
-        return "Unable to authenticate, Check JWT", 403
+        return "Unable to authenticate, Check JWT", 401
 
     all_meetings = db.get_all_meetings()
     return jsonify(all_meetings)
@@ -73,10 +76,9 @@ def get_meetings():
 
 @app.route('/meeting', methods=['POST'])
 def create_meeting():
-    # TODO: validate using JSON schema (Using Mongo validator)
     staff = get_staff_from_auth_header(request.headers.get('Authorization', ''))
     if staff is None:
-        return "Unable to authenticate, Check JWT", 403
+        return "Unable to authenticate, Check JWT", 401
 
     meeting_data = request.get_json(silent=True)
     if meeting_data is None:
@@ -96,20 +98,23 @@ def create_meeting():
 
 @app.route('/meeting/<meeting_id>')
 def get_meeting(meeting_id):
-    staff = get_staff_from_auth_header(request.headers.get('Authorization', ''))
-    if staff is None:
-        return "Unable to authenticate, Check JWT", 403
+    staff_dict = get_staff_from_auth_header(request.headers.get('Authorization', ''))
+    if staff_dict is None:
+        return "Unable to authenticate, Check JWT", 401
 
-    meeting = db.get_meeting(meeting_id)
-    if meeting is None:
+    meeting_dict = db.get_meeting(meeting_id)
+    if meeting_dict is None:
         return "No meeting found" , 404
 
+    staff = Staff.parse(staff_dict)
+    meeting = Meeting.parse(meeting_dict)
     roles = authorization.get_role(staff, meeting)
 
     if len(roles) == 0:
-        return "Unauthorized" , 403
+        return "Unauthorized" , 401
 
-    return jsonify(meeting)
+
+    return jsonify(meeting.to_json_dict())
 
 
 @app.route('/meeting/<meeting_id>', methods=['PUT'])
@@ -119,18 +124,24 @@ def update_meeting(meeting_id):
     if meeting_data is None:
         return "No meeting data found in body"
 
-    staff = get_staff_from_auth_header(request.headers.get('Authorization', ''))
-    if staff is None:
-        return "Unable to authenticate, Check JWT", 403
+    staff_dict = get_staff_from_auth_header(request.headers.get('Authorization', ''))
+    if staff_dict is None:
+        return "Unable to authenticate, Check JWT", 401
 
-    meeting = db.get_meeting(meeting_id)
-    if meeting is None:
+    meeting_dict = db.get_meeting(meeting_id)
+    if meeting_dict is None:
         return "No meeting found", 404
 
+    staff = Staff.parse(staff_dict)
+    meeting = Meeting.parse(meeting_dict)
     roles = authorization.get_role(staff, meeting)
 
     if authorization.Role.HOST not in roles:
-        return "Unauthorized" , 403
+        return "Unauthorized" , 401
+
+    # Check if meeting has ended
+    if meeting.ended:
+        return "Forbidden, Meeting has ended", 403
 
     done = db.update_meeting(meeting_id, meeting_data)
     print(done)
@@ -142,18 +153,24 @@ def update_meeting(meeting_id):
 
 @app.route('/meeting/<meeting_id>', methods=['DELETE'])
 def delete_meeting(meeting_id):
-    staff = get_staff_from_auth_header(request.headers.get('Authorization', ''))
-    if staff is None:
-        return "Unable to authenticate, Check JWT", 403
+    staff_dict = get_staff_from_auth_header(request.headers.get('Authorization', ''))
+    if staff_dict is None:
+        return "Unable to authenticate, Check JWT", 401
 
-    meeting = db.get_meeting(meeting_id)
-    if meeting is None:
+    meeting_dict = db.get_meeting(meeting_id)
+    if meeting_dict is None:
         return "No meeting found", 404
 
+    staff = Staff.parse(staff_dict)
+    meeting = Meeting.parse(meeting_dict)
     roles = authorization.get_role(staff, meeting)
 
     if authorization.Role.HOST not in roles:
-        return "Unauthorized", 403
+        return "Unauthorized", 401
+
+    # Check if meeting has ended
+    if meeting.ended:
+        return "Forbidden, Meeting has ended", 403
 
     for patient_id in meeting["patients"]:  # Delete all meeting specific patient data
         db.delete_patient_meeting_data(meeting_id, patient_id)
@@ -166,18 +183,20 @@ def delete_meeting(meeting_id):
 
 @app.route('/meeting/<meeting_id>/patient/<patient_id>')
 def get_patient_meeting_data(meeting_id, patient_id):
-    staff = get_staff_from_auth_header(request.headers.get('Authorization', ''))
-    if staff is None:
-        return "Unable to authenticate, Check JWT", 403
+    staff_dict = get_staff_from_auth_header(request.headers.get('Authorization', ''))
+    if staff_dict is None:
+        return "Unable to authenticate, Check JWT", 401
 
-    meeting = db.get_meeting(meeting_id)
-    if meeting is None:
+    meeting_dict = db.get_meeting(meeting_id)
+    if meeting_dict is None:
         return "No meeting found", 404
 
+    staff = Staff.parse(staff_dict)
+    meeting = Meeting.parse(meeting_dict)
     roles = authorization.get_role(staff, meeting)
 
     if len(roles) == 0:
-        return "Unauthorized", 403
+        return "Unauthorized", 401
 
     patient_meeting_data = db.get_patient_meeting_data(meeting_id, patient_id)
     if patient_meeting_data is None:
@@ -188,22 +207,28 @@ def get_patient_meeting_data(meeting_id, patient_id):
 
 @app.route('/meeting/<meeting_id>/patient/<patient_id>', methods=['PUT'])
 def update_patient_meeting_data(meeting_id, patient_id):
-    staff = get_staff_from_auth_header(request.headers.get('Authorization', ''))
-    if staff is None:
-        return "Unable to authenticate, Check JWT", 403
+    staff_dict = get_staff_from_auth_header(request.headers.get('Authorization', ''))
+    if staff_dict is None:
+        return "Unable to authenticate, Check JWT", 401
 
-    meeting = db.get_meeting(meeting_id)
-    if meeting is None:
+    meeting_dict = db.get_meeting(meeting_id)
+    if meeting_dict is None:
         return "No meeting found", 404
 
+    staff = Staff.parse(staff_dict)
+    meeting = Meeting.parse(meeting_dict)
     roles = authorization.get_role(staff, meeting)
 
     if authorization.Role.HOST not in roles:
-        return "Unauthorized", 403
+        return "Unauthorized", 401
 
     patient_meeting_data = request.get_json(silent=True)
     if patient_meeting_data is None:
         return "No patient meeting data found in body", 404
+
+    # Check if meeting has ended
+    if meeting.ended:
+        return "Forbidden, Meeting has ended", 403
 
     done = db.update_patient_meeting_data(meeting_id, update_meeting, patient_meeting_data)
     log.info("Updated patient-meeting data: M: " + meeting_id + ", P: " + patient_id)
@@ -240,6 +265,26 @@ def get_staff(staff_id):
     return jsonify(staff)
 
 
+@app.route('/events/<meeting_id>')
+def get_events_for_meeting(meeting_id):
+    staff_dict = get_staff_from_auth_header(request.headers.get('Authorization', ''))
+    if staff_dict is None:
+        return "Unable to authenticate, Check JWT", 401
+
+    meeting_dict = db.get_meeting(meeting_id)
+    if meeting_dict is None:
+        return "No meeting found", 404
+
+    staff = Staff.parse(staff_dict)
+    meeting = Meeting.parse(meeting_dict)
+
+    if staff.id in meeting.attended_staff:
+        all_events = db.get_all_events_in_meeting(meeting_id)
+        print(all_events)
+        return jsonify(all_events)
+    else:
+        return "Unauthorised", 401
+
 if __name__ == '__main__':
     app.run(host="localhost", port=51234)
 
@@ -267,11 +312,6 @@ if __name__ == '__main__':
 #     log("Updated event: ", event_id)
 #     return "updated"
 #
-#
-# @app.route('/events')  # FIXME: Remove during deployment
-# def __get_all_events__():
-#     all_events = db.get_all_events()
-#     return jsonify(all_events)
 #
 #
 # @app.route('/event/<event_id>')

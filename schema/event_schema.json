@@ -7,7 +7,7 @@
   "required": [
     "by",
     "meetingId",
-    "eventId",
+    "_id",
     "timestamp",
     "type"
   ],
@@ -23,8 +23,8 @@
       "type": "string",
       "title": "Meeting Id"
     },
-    "eventId": {
-      "$id": "#/properties/eventId",
+    "_id": {
+      "$id": "#/properties/_id",
       "type": "string",
       "title": "Event ID",
       "description": "Signature of the event by the sender"

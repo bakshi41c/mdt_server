@@ -59,10 +59,10 @@ class Database:
     ###################
 
     def insert_patient_meeting_data(self, meeting_id, patient_id,  meeting_patient_data):
-        meeting_patient_data["meeting_id"] = meeting_id
-        meeting_patient_data["patient_id"] = patient_id
-        meeting_patient_data["mdt_outcome"] = meeting_patient_data.get("mdt_outcome", "")
-        meeting_patient_data["mdt_question"] = meeting_patient_data.get("mdt_question", "")
+        meeting_patient_data["meetingId"] = meeting_id
+        meeting_patient_data["patientId"] = patient_id
+        meeting_patient_data["mdtOutcome"] = meeting_patient_data.get("mdtOutcome", "")
+        meeting_patient_data["mdtQuestion"] = meeting_patient_data.get("mdtQuestion", "")
         meeting_patient_data["group"] = meeting_patient_data.get("group", "")
         meeting_patient_data["lc"] = meeting_patient_data.get("lc", "")
         meeting_patient_data["investigation"] = meeting_patient_data.get("investigation", "")
@@ -71,14 +71,14 @@ class Database:
         self.patient_meeting_data_col.insert_one(meeting_patient_data)
 
     def get_patient_meeting_data(self, meeting_id, patient_id):
-        return self.patient_meeting_data_col.find_one({"meeting_id": meeting_id, "patient_id": patient_id})
+        return self.patient_meeting_data_col.find_one({"meetingId": meeting_id, "patientId": patient_id})
 
     def update_patient_meeting_data(self, meeting_id, patient_id, data):
-        return self.patient_meeting_data_col.update_one({"meeting_id": meeting_id, "patient_id": patient_id},
+        return self.patient_meeting_data_col.update_one({"meetingId": meeting_id, "patientId": patient_id},
                                                    {'$set': data})
 
     def delete_patient_meeting_data(self, meeting_id, patient_id):
-        return self.patient_meeting_data_col.delete_one({"meeting_id": meeting_id, "patient_id": patient_id})
+        return self.patient_meeting_data_col.delete_one({"meetingId": meeting_id, "patientId": patient_id})
 
     ############
     # PATIENTS #
@@ -98,7 +98,7 @@ class Database:
         return self.events_col.find_one({"_id": event_id})
 
     def get_all_events_in_meeting(self, meeting_id):
-        pass
+        return list(self.events_col.find({"meetingId": meeting_id}))
 
     def get_all_events(self):
         return list(self.events_col.find())

@@ -7,86 +7,125 @@ from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from enum import Enum
+import traceback
+
+import meeting_contract_helper
 from db import Database
 import config
 from authorization import Role, get_role
 import authentication
 import copy
-from meeting_event import ack_event_template, MeetingEventType
 import event_schema_validator
 import log as logger
+import logging
+from model import Event, Staff, Meeting, AckErrorContent, EventError, JoinContent, DeeIdLoginSigSigned, MeetingEventType, \
+    StartContent, AckJoinContent, AckEndContent, PollContent, VoteContent, PDCContent, AckPollEndContent
 
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = 'TVBam9S&W7IbTC8W'
 
 socketio = SocketIO(app)
+
 CORS(app)
 
 config = config.get_config()
 db = Database(config["database"]["db_name"], config["database"]["ip"], config["database"]["port"])
-log = logger.get_logger('web_server_socketio.py')
+log = logger.get_logger('web_server_socketio')
 timestamp_tolerance = 10  # seconds
 ongoing_meetings = {}
 auth = authentication.Auth(config)
+smart_contract = meeting_contract_helper.MeetingContractHelper(config)
+
+class OngiongMeeting:
+    def __init__(self):
+        self.otp = ''
+        self.host = ''
+        self.start_event = None
+        self.events = {} # type: dict[str, Event]
+        self.polls = {} # type: dict[str, Poll]
+        self.unref_events = {}  # type: dict[str, Event]
+        self.session_keys = {} # type: dict[str, str]
+        self.latest_join_events = {}  # type: dict[str, Event]
+
+
+class Poll:
+    def __init__(self):
+        self.votes = {} # type: dict[str, Event]
 
 def start(event, staff, meeting, roles) -> (bool, dict):
     log.debug("Processing Start event")
     # Check if the user is allowed to start
     if Role.HOST not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                      details=''))
 
     # Check if meeting has already started, if it has send the otp, in case the host has forgotten
     started, _ = validate_meeting_started(event, meeting)
     if started:
-        otp = ongoing_meetings[meeting["_id"]]["otp"]
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"otp": otp,
-                                                   "errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        otp = ongoing_meetings[meeting.id].otp
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.MEETING_ALREADY_STARTED,
+                                                      details='Meeting already started, otp : ' + otp))
 
-    new_key = event["content"]["key"]
-    uid = event["content"]["uID"]
-    expiry = event["content"]["expiryTime"]
-    sig = event["content"]["sig"]
+    # Parse the content of event as StartContent
+    try:
+        sc = StartContent.parse(event.content)
+        dee_id_login_sig = DeeIdLoginSigSigned.parse(sc.deeid_login_sig_signed)
+        new_key = sc.key
+        uid = dee_id_login_sig.uid
+        expiry = dee_id_login_sig.expiry_time
+        sig = dee_id_login_sig.signature
+    except KeyError as ke:
+        log.error(ke)
+        traceback.print_tb(ke.__traceback__)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                      details="Content doesnt have sufficient values"))
 
-    msg = uid + staff['id'] + expiry + new_key
-
+    # Authenticate new key
+    msg = uid + staff.id + expiry + new_key
     addr = auth.get_sig_address_from_signature(msg=msg, signature=sig)
-    ok = auth.ethkey_in_deeid_contract(addr, staff['id'])
-
+    ok = auth.ethkey_in_deeid_contract(addr, staff.id)
     if not ok:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {
-                                        "errorCode": EventStreamError.UNAUTHORISED.value,
-                                        "message" : "New pubKey cannot be authenticated" }
-                                },
-                              ack_type=MeetingEventType.ACK_ERR.value)
-
-    # Create the meeting details
-    ongoing_meetings[meeting["_id"]] = {
-        "otp": event["content"]["otp"],
-        "host": staff["_id"],
-        "joined_participants": [staff["_id"]],
-        "start_event": event,
-        "events": {
-            event["eventId"] : event
-        },
-        "polls": {},
-        "unref_events": {},  # Events that havent been referenced, needed for when the meeting ends
-        "session_keys" : {
-            staff['_id'] : new_key
-        }
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                      details="New pubKey cannot be authenticated"))
+    print("OTP: ", sc.otp)
+    #  Create new meeting session
+    om = OngiongMeeting()
+    om.otp = sc.otp
+    om.host = staff.id
+    om.start_event = event
+    om.events = {event.id: event}
+    om.polls = {}
+    om.unref_events = {}
+    om.session_keys = {
+        staff.id : new_key
     }
+    om.latest_join_events = []
 
-    # Set the meeting as started in the db
-    meeting['started'] = True
-    db.update_meeting(meeting['_id'], meeting)
+    # Create smart contract for the meeting  - COSTS MONEY
+    log.debug("Deploying Smart Contract...")
+    try:
+        meeting.contract_id = smart_contract.new_meeting_contract(meeting)
+    except Exception as e:  # We catch all exceptions as there are too many
+        log.error("FAILED deploying smart contract")
+        log.error(e)
+        traceback.print_tb(e.__traceback__)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                content=AckErrorContent(error_code=EventError.INTERNAL_ERROR,
+                                                        details='Smart Contract could not be deployed'))
+
+    log.debug("Deployed smart contract!")
+    log.debug(meeting.contract_id)
+    ongoing_meetings[meeting.id] = om
+    meeting.started = True # Set the meeting as started in the db
+    db.update_meeting(meeting.id, meeting.to_json_dict())
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"])
+    ack = get_ack(event.id, event.meeting_id)
     return True, ack
 
 
@@ -94,59 +133,64 @@ def join(event, staff, meeting, roles) -> (bool, dict):
     log.debug("Processing Join event")
     # Check if the user is allowed to join
     if Role.PARTICIPANT not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                    details=''))
 
     # Check if meeting has started
     ok, err_ack = validate_meeting_started(event, meeting)
     if not ok:
         return False, err_ack
 
-    meeting_session_details = ongoing_meetings.get(meeting["_id"], None)
+    # Get Meeting session details
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+
+    # Parse the content of event as JoinContent
+    try:
+        jc = JoinContent.parse(event.content)
+        dee_id_login_sig = DeeIdLoginSigSigned.parse(jc.deeid_login_sig_signed)
+        new_key = jc.key
+        uid = dee_id_login_sig.uid
+        expiry = dee_id_login_sig.expiry_time
+        sig = dee_id_login_sig.signature
+    except KeyError as ke:
+        log.error(ke)
+        traceback.print_tb(ke.__traceback__)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                                    details="Content doesnt have sufficient values"))
 
     # Check OTP
-    if not event["content"]["otp"] == meeting_session_details["otp"]:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.BAD_OTP.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+    if not jc.otp == meeting_session_details.otp:
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.BAD_OTP,
+                                                                    details=''))
 
 
-    new_key = event["content"]["key"]
-    uid = event["content"]["uID"]
-    expiry = event["content"]["expiryTime"]
-    sig = event["content"]["sig"]
-
-    msg = uid + staff['id'] + expiry + new_key
-
+    # Authenticate new key
+    msg = uid + staff.id + expiry + new_key
     addr = auth.get_sig_address_from_signature(msg=msg, signature=sig)
-    ok = auth.ethkey_in_deeid_contract(addr, staff['id'])
+    ok = auth.ethkey_in_deeid_contract(addr, staff.id)
 
     if not ok:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {
-                                  "errorCode": EventStreamError.UNAUTHORISED.value,
-                                  "message": "New pubKey cannot be authenticated"}
-                              },
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                    details="New pubKey cannot be authenticated"))
 
-    meeting_session_details["session_keys"][staff['_id']] = new_key
+    meeting_session_details.session_keys[staff.id] = new_key
 
-
-    # Add user to the participants who have joined
-    if staff["_id"] not in meeting_session_details["joined_participants"]:
-        meeting_session_details["joined_participants"].append(staff["_id"])
+    # Add them to the list of staff that have joined the meeting
+    update_attended_staff(meeting, staff)
 
     # Join the socketio room using the sessison_id
-    join_room(meeting["_id"])
+    join_room(meeting.id)
 
-    start_event = ongoing_meetings[meeting["_id"]]["start_event"]
+    start_event = meeting_session_details.start_event
+    latest_join_events = meeting_session_details.latest_join_events
+
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"], content={
-        "details": {
-            "startEvent": json.dumps(start_event)
-        }
-    }, ack_type=MeetingEventType.ACK_JOIN.value)
+    jac = AckJoinContent(start_event, latest_join_events)
+    ack = get_ack(event.id, event.meeting_id, type=MeetingEventType.ACK_JOIN, content=jac)
     return True, ack
 
 
@@ -167,20 +211,21 @@ def leave(event, staff, meeting):
     if not ok:
         return False, err_ack
 
-    meeting_session_details = ongoing_meetings[meeting["_id"]]
+    # Get Meeting session details
+    # meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    #
+    # # Check if they are in the meeting, if so, remove them, otherwise its an error
+    # if staff.id in meeting_session_details.joined_particpants:
+    #     meeting_session_details.joined_particpants.remove(staff.id)
+    # else:
+    #     return False, get_error_ack(event.id, event.meeting_id,
+    #                                 content=AckErrorContent(error_code=EventError.MEETING_NOT_JOINED,
+    #                                                                 details=""))
 
-    # Check if they are in the meeting, if so, remove them, otherwise its an error
-    if staff["_id"] in meeting_session_details["joined_participants"]:
-        meeting_session_details["joined_participants"].remove(staff["_id"])
-    else:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.MEETING_NOT_JOINED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
-
-    leave_room(meeting["_id"])
+    leave_room(meeting.id)
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"])
+    ack = get_ack(event.id, event.meeting_id)
     return True, ack
 
 
@@ -188,9 +233,9 @@ def end(event, staff, meeting, roles):
     log.debug("Processing End event")
     # Check whether they should be allowed to end
     if Role.HOST not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                    details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -207,12 +252,12 @@ def end(event, staff, meeting, roles):
     if not ok:
         return False, err_ack
 
-    meeting_session_details = ongoing_meetings[meeting["_id"]]
+    # Get Meeting session details
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
 
-    # ACK
-    ack = get_ack(event["eventId"], event["meetingId"], content={"details":  {
-            list(meeting_session_details["unref_events"].keys())}})
-
+    # ACK  -- WE get ACK early as we need the signature for smart contract later, and there could be errors with that
+    eac = AckEndContent(list(meeting_session_details.unref_events.keys()))
+    ack = get_ack(event.id, event.meeting_id, type=MeetingEventType.ACK_END, content=eac)
     return True, ack
 
 
@@ -220,9 +265,9 @@ def poll(event, staff, meeting, roles):
     log.debug("Processing Poll event")
     # Check whether they should be allowed to start a poll
     if Role.HOST not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                             details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -239,14 +284,26 @@ def poll(event, staff, meeting, roles):
     if not ok:
         return False, err_ack
 
-    meeting_session_details = ongoing_meetings.get(meeting["_id"], None)
-    meeting_session_details["polls"][event["eventId"]] = {
-        "votes": {},
-        "options": event["content"]["options"]
-    }
+    # Get Meeting session details
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+
+    # Parsing content as PollContent
+    try:
+        pc = PollContent.parse(event.content)
+    except KeyError as ke:
+        log.error(ke)
+        traceback.print_tb(ke.__traceback__)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                                    details="Content doesnt have sufficient values"))
+
+    new_poll = Poll()
+    poll.votes = {}
+
+    meeting_session_details.polls[event.id] = new_poll
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"])
+    ack = get_ack(event.id, event.meeting_id)
     return True, ack
 
 
@@ -254,9 +311,9 @@ def vote(event, staff, meeting, roles):
     log.debug("Processing Vote Event")
     # Check whether they should be allowed to vote
     if Role.PARTICIPANT not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                    details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -268,43 +325,53 @@ def vote(event, staff, meeting, roles):
     if not ok:
         return False, err_ack
 
-    meeting_session_details = ongoing_meetings.get(meeting["_id"], None)
+    # Get Meeting session details
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
 
     # Check if refEvent is a poll
-    poll = meeting_session_details["polls"].get(event["refEvent"], None)
+    poll = meeting_session_details.polls.get(event.ref_event, None)
     if poll is None:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.POLL_NOT_FOUND.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.POLL_NOT_FOUND,
+                                                                    details=''))
 
-    # Check if vote is one of the options
-    user_vote = event["content"]["vote"]
-    if user_vote not in poll["options"]:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.INVALID_VOTE_OPTION.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+    # Parsing content as VoteContent
+    try:
+        vc = VoteContent.parse(event.content)
+    except KeyError as ke:
+        traceback.print_tb(ke.__traceback__)
+        log.error(ke)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                                    details="Content doesnt have sufficient values"))
+    #
+    # # Check if vote is one of the options
+    # if vc.vote not in poll.options:
+    #     return False, get_error_ack(event.id, event.meeting_id,
+    #                                 content=AckErrorContent(error_code=EventError.INVALID_VOTE_OPTION,
+    #                                                                 details='').to_json_dict())
 
     # Check if already voted
-    if event["by"] in poll["votes"].keys():
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.ALREADY_VOTED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+    if event.by in poll.votes:
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.ALREADY_VOTED,
+                                                                    details=''))
 
     log.debug("Adding the vote to votes")
-    poll["votes"][event["by"]] = event
+    poll.votes[staff.id] = event
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"])
+    ack = get_ack(event.id, event.meeting_id)
     return True, ack
 
 
 def end_poll(event, staff, meeting, roles):
     log.debug("Processing End Poll event")
-    # Check whether they should be allowed to vote
+    # Check whether they should be allowed to end poll
     if Role.HOST not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                    details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -316,22 +383,25 @@ def end_poll(event, staff, meeting, roles):
     if not ok:
         return False, err_ack
 
-    meeting_session_details = ongoing_meetings.get(meeting["_id"], None)
+    # Get Meeting session details
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
 
-    # Check if refEvent is a poll
-    poll = meeting_session_details["polls"].get(event["refEvent"], None)
+    #  Check if refEvent is a poll
+    poll = meeting_session_details.polls.get(event.ref_event, None)
     if poll is None:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.POLL_NOT_FOUND.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.POLL_NOT_FOUND,
+                                                                    details=''))
+
+    vote_event_ids = [event.id for event in list(poll.votes.values())]
+    poll_end_ack_event = AckPollEndContent(votes=vote_event_ids)
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"],
-                  content={"details": {"votes": list(poll["votes"].values())}},
-                  ack_type=MeetingEventType.ACK_POLL_END.value)
+    ack = get_ack(event.id, meeting.id,
+                    type=MeetingEventType.ACK_POLL_END, content=poll_end_ack_event)
 
     # Delete poll
-    del meeting_session_details["polls"][event["refEvent"]]
+    meeting_session_details.polls.pop(event.ref_event)
 
     return True, ack
 
@@ -340,9 +410,9 @@ def comment_reply_disagreement(event, staff, meeting, roles):
     log.debug("Processing Comment/Reply/Disagreement event")
     # Check whether they should be allowed to vote
     if Role.PARTICIPANT not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                    details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -360,7 +430,7 @@ def comment_reply_disagreement(event, staff, meeting, roles):
         return False, err_ack
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"])
+    ack = get_ack(event.id, meeting.id)
     return True, ack
 
 
@@ -368,9 +438,9 @@ def discussion(event, staff, meeting, roles):
     log.debug("Processing Discussion event")
     # Check whether they should be allowed to start discussion
     if Role.HOST not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                    details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -388,7 +458,7 @@ def discussion(event, staff, meeting, roles):
         return False, err_ack
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"])
+    ack = get_ack(event.id, meeting.id)
     return True, ack
 
 
@@ -396,9 +466,9 @@ def patient_data_change(event, staff, meeting, roles):
     log.debug("Processing PDC event")
     # Check whether they should be allowed to start discussion
     if Role.HOST not in roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                    details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -415,21 +485,32 @@ def patient_data_change(event, staff, meeting, roles):
     if not ok:
         return False, err_ack
 
+    # Parsing content as VoteContent
+    try:
+        pdc = PDCContent.parse(event.content)
+    except KeyError as ke:
+        traceback.print_tb(ke.__traceback__)
+        log.error(ke)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                                    details="Content doesnt have sufficient values"))
+
     # Check if patient actually exists
-    patient_id = event["content"]["patient"]
+    patient_id = pdc.patient
     patient = db.get_patient(patient_id)
     if patient is None:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.PATIENT_NOT_FOUND.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.PATIENT_NOT_FOUND,
+                                                                    details=''))
 
     # ACK
-    ack = get_ack(event["eventId"], event["meetingId"])
+    ack = get_ack(event.id, meeting.id)
     return True, ack
 
 
-def sign(event):
-    return auth.sign_event(event)
+def sign(event : Event):
+    signed_event = auth.sign_event(event.to_json_dict())
+    return Event.parse(signed_event)
 
 
 def send(signed_event, broadcast_room=None):
@@ -439,68 +520,83 @@ def send(signed_event, broadcast_room=None):
         emit_ws('room-message', signed_event, room=broadcast_room)
 
 
-def record(event, meeting):
-    log.debug("Storing: " + event["eventId"])
+def update_attended_staff(meeting : Meeting, staff : Staff):
+    if staff.id not in meeting.attended_staff:
+        meeting.attended_staff.append(staff.id)
+        db.update_meeting(meeting.id, meeting.to_json_dict())
+
+def record(event: Event, meeting : Meeting):
+    log.debug("Storing: " + event.id)
     log.debug(event)
-    meeting_session_details = ongoing_meetings.get(meeting["_id"], None)
-    meeting_session_details["events"][event["eventId"]] = event
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details.events[event.id] = event
+    db.insert_event(event.to_json_dict())
 
 
-def get_ack(ref_event, meeting_id, content=None, ack_type=MeetingEventType.ACK.value):
-    valid_ack_types = [MeetingEventType.ACK.value, MeetingEventType.ACK_ERR.value, MeetingEventType.ACK_JOIN.value,
-                       MeetingEventType.ACK_POLL_END]
-
-    if ack_type not in valid_ack_types:
-        log.warn("Ack type not a valid! Continuing anyway...   AckType: " + ack_type)
+def get_error_ack(ref_event, meeting_id, content=None):
+    ack_event = Event()
+    ack_event.type = MeetingEventType.ACK_ERR
+    ack_event.meeting_id = meeting_id
+    ack_event.ref_event = ref_event
+    ack_event.timestamp = int(time.time())
 
     if content is None:
         content = {}
-    ack_event = copy.deepcopy(ack_event_template)
-    ack_event["by"] = auth.get_public_key_as_hex_string()
-    ack_event["refEvent"] = ref_event
-    ack_event["timestamp"] = int(time.time())
-    ack_event["meetingId"] = meeting_id
-    ack_event["content"] = content
-    ack_event["type"] = ack_type
+    ack_event.content = content
     return ack_event
 
 
-def add_event_as_unref(meeting, event):
-    ongoing_meetings[meeting["_id"]]["unref_events"][event["eventId"]] = None
+def get_ack(ref_event, meeting_id, type=MeetingEventType.ACK, content=None):
+    ack_event = Event()
+    ack_event.type = type
+    ack_event.meeting_id = meeting_id
+    ack_event.ref_event = ref_event
+    ack_event.timestamp = int(time.time())
+
+    if content is None:
+        content = {}
+    ack_event.content = content
+    return ack_event
+
+def add_event_as_unref(meeting : Meeting, event : Event):
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details.unref_events[event.id] = None
 
 
 def check_and_remove_ref_event(meeting, ref_event):
-    ongoing_meetings[meeting["_id"]].pop(ref_event, None)
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details.unref_events.pop(ref_event, None)
 
 
 def validate_ref_event(event, meeting) -> (bool, dict):
-    ref_valid = event["refEvent"] in ongoing_meetings[meeting["_id"]]["events"]
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    ref_valid = event.ref_event in meeting_session_details.events
 
     if not ref_valid:
-        err_ack = get_ack(event["eventId"], event["meetingId"],
-                          content={"details": {"errorCode": EventStreamError.INVALID_REF_EVENT.value}},
-                          ack_type=MeetingEventType.ACK_ERR.value)
+        err_ack = get_error_ack(event.id, event.meeting_id,
+                                content=AckErrorContent(error_code=EventError.INVALID_REF_EVENT,
+                                                                    details=''))
         return False, err_ack
     return True, None
 
 
-def validate_meeting_started(event, meeting) -> (bool, dict):
-    meeting_started = meeting["_id"] in ongoing_meetings.keys()
+def validate_meeting_started(event : Event, meeting : Meeting) -> (bool, dict):
+    meeting_started = meeting.id in ongoing_meetings
     if not meeting_started:
-        err_ack = get_ack(event["eventId"], event["meetingId"],
-                          content={"details": {"errorCode": EventStreamError.MEETING_NOT_STARTED.value}},
-                          ack_type=MeetingEventType.ACK_ERR.value)
+        err_ack = get_error_ack(event.id, event.meeting_id,
+                                content=AckErrorContent(error_code=EventError.MEETING_NOT_STARTED,
+                                                                    details=''))
         return False, err_ack
 
     return True, None
 
 
 def validate_join(event, staff, meeting) -> (bool, dict):
-    joined = staff["_id"] in ongoing_meetings[meeting["_id"]]["joined_participants"]
+    joined = staff.id in meeting.attended_staff
     if not joined:
-        err_ack = get_ack(event["eventId"], event["meetingId"],
-                          content={"details": {"errorCode": EventStreamError.MEETING_NOT_JOINED.value}},
-                          ack_type=MeetingEventType.ACK_ERR.value)
+        err_ack = get_error_ack(event.id, event.meeting_id,
+                                content=AckErrorContent(error_code=EventError.MEETING_NOT_JOINED,
+                                                                    details=''))
         return False, err_ack
 
     return True, None
@@ -508,52 +604,63 @@ def validate_join(event, staff, meeting) -> (bool, dict):
 
 def validate_timestamp(event) -> (bool, dict):
     current_time = int(time.time())
-    if not (current_time - timestamp_tolerance <= event["timestamp"] <= current_time + timestamp_tolerance):
-        err_event = get_ack(event["eventId"], event["meetingId"],
-                            content={"details": {
-                                "errorCode": EventStreamError.TIMESTAMP_NOT_SYNC.value,
-                                "currentServerTime": str(current_time)}},
-                            ack_type=MeetingEventType.ACK_ERR.value)
+    if not (current_time - timestamp_tolerance <= event.timestamp <= current_time + timestamp_tolerance):
+        err_event = get_error_ack(event.id, event.meeting_id,
+                                  content=AckErrorContent(error_code=EventError.TIMESTAMP_NOT_SYNC,
+                                                                    details='Server Timestamp : ' + str(current_time)))
+
 
         return False, err_event
 
     return True, None
 
 
-def validate_schema(event) -> (bool, dict):
-    ok, err = event_schema_validator.validate(event)
+def validate_schema(event_dict) -> (bool, dict):
+    ok, err = event_schema_validator.validate(event_dict)
     if not ok:
-        event_id = event.get("eventId", "unknownEventId")
-        meeting_id = event.get("meetingId", "unknownMeetingId")
-        err_event = get_ack(event_id, meeting_id,
-                            content={"details": {"errorCode": EventStreamError.MALFORMED_EVENT.value,
-                                                 "errorDetails": err}},
-                            ack_type=MeetingEventType.ACK_ERR.value)
+        err_event = get_error_ack("unknown", "unknown",
+                                  content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                      details=err))
+
         return False, err_event
 
     return True, None
 
 
-def validate_signature(event, staff, meeting) -> (bool, dict):
-    meeting_session_key = None
-    try:
-        meeting_session_key = ongoing_meetings[meeting['_id']]['session_keys'][staff['_id']]
-    except KeyError as ke:
-        log.warn('No Keys found from meeting ' + str(ke))
+def validate_signature(event, staff, meeting, check_contract=False) -> (bool, dict):
+    log.debug('Validating Signature...')
 
-    sig_addr = auth.get_sig_address_from_event(event)
+    sig_addr = str(auth.get_sig_address_from_event(event.to_json_dict()))
 
+    #  Check session key, or if it doesnt exist, check with actual public key in smart contract
     ok = False
-    if meeting_session_key is None:
-        ok = auth.ethkey_in_deeid_contract(sig_addr, staff['_id'])
+    if check_contract:
+        log.debug('Checking DeeId Contract')
+        ok = auth.ethkey_in_deeid_contract(sig_addr, staff.id)
+        log.debug('Eth key in contract? ' + str(ok))
     else:
-        ok = sig_addr == meeting_session_key
+        # Get Meeting session details to get the session key
+        meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+        meeting_session_key = None
+        if meeting_session_details is not None:
+            meeting_session_key = meeting_session_details.session_keys.get(staff.id, None)
+
+        if meeting_session_key is None:
+            err_event = get_error_ack(event.id, event.meeting_id,
+                                      content=AckErrorContent(error_code=EventError.BAD_SESSION_KEY_SIGNATURE,
+                                                              details=''))
+            return False, err_event
+
+        ok = sig_addr.lower() == meeting_session_key.lower()
+        log.debug('Sig Addr ' + sig_addr)
+        log.debug('Session key ' + meeting_session_key)
+        log.debug('Session key matches up? '+ str(ok))
 
     if not ok:
-        event_id = event.get("eventId", "unknownEventId")
-        meeting_id = event.get("meetingId", "unknownMeetingId")
-        err_event = get_ack(event_id, meeting_id,
-                            content={"details": {"errorCode": EventStreamError.BAD_SIGNATURE.value}})
+        err_event = get_error_ack(event.id, event.meeting_id,
+                                  content=AckErrorContent(error_code=EventError.BAD_SIGNATURE,
+                                                      details=''))
+
         return False, err_event
 
     return True, None
@@ -561,60 +668,123 @@ def validate_signature(event, staff, meeting) -> (bool, dict):
 
 def validate_preliminary_authority(event, roles) -> (bool, dict):
     if not roles:
-        return False, get_ack(event["eventId"], event["meetingId"],
-                              content={"details": {"errorCode": EventStreamError.UNAUTHORISED.value}},
-                              ack_type=MeetingEventType.ACK_ERR.value)
+        err_event = get_error_ack(event.id, event.meeting_id,
+                                  content=AckErrorContent(error_code=EventError.UNAUTHORISED,
+                                                                  details=''))
+
+        return False, err_event
     return True, None
 
 
-def save_all_events_into_db(meeting):
-    for eid, event in ongoing_meetings[meeting["_id"]]["events"].items():
-        db.insert_event(event)
+def end_meeting_session(meeting, event, signed_ack_event):
+    # Write the event hash of the meeting to smart contract  - COSTS MONEY
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    try:
+        start_hash = meeting_session_details.start_event.id
+        end_hash = signed_ack_event.id
+        smart_contract.set_event_hash(meeting, start_hash, end_hash)
+    except Exception as e:  # We catch all exceptions as there are too many
+        log.error(e)
+        traceback.print_tb(e.__traceback__)
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.INTERNAL_ERROR,
+                                                            details=''))
+
+    # Mark meeting as ended
+    meeting.ended = True
+    db.update_meeting(meeting.id, meeting.to_json_dict())
+
+
+    print('============= MEETING END =============')
+    print(ongoing_meetings[meeting.id])
+    print(signed_ack_event)
+    ongoing_meetings.pop(meeting.id)
+    close_room(meeting.id)
 
 
 @socketio.on('room-message')
-def room_message(event):
+def room_message(event_string):
+
+    # Parse json as dict
     try:
-        event = json.loads(event)
+        event_json = json.loads(event_string)
     except ValueError as ve:
         log.error("Error Parsing room-message as JSON!")
         log.error(ve)
-        return json.dumps(sign(get_ack(event["eventId"], event["meetingId"],
-                                       content={"details": {"errorCode": EventStreamError.MALFORMED_EVENT.value}},
-                                       ack_type=MeetingEventType.ACK_ERR.value)))
+        traceback.print_tb(ve.__traceback__)
+        return json.dumps(sign(get_error_ack("unknown", "unknown",
+                                  content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                      details='Cant parse message as JSON'))).to_json_dict())
 
-    # Validate JSON using schema
-    ok, err_event = validate_schema(event)
+
+    # Validate JSON dict using schema
+    ok, err_event = validate_schema(event_json)
     if not ok:
         log.error("Sending error msg")
-        errormsg = json.dumps(sign(err_event))
+        errormsg = json.dumps(sign(err_event).to_json_dict())
         log.error("======== error_msg: " + errormsg)
         return errormsg
+
+
+    # Parse dict as event object
+    try:
+        event = Event.parse(event_json)
+    except KeyError as ve:
+        log.error("Error Parsing room-message!")
+        log.error(ve)
+        traceback.print_tb(ve.__traceback__)
+        return json.dumps(sign(get_error_ack("unknown", "unknown",
+                                  content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                      details='Cant parse message as Event'))).to_json_dict())
 
     # Check timestamp
     ok, err_event = validate_timestamp(event)
     if not ok:
-        return json.dumps(sign(err_event))
+        return json.dumps(sign(err_event).to_json_dict())
 
     # Get the staff
-    staff = db.get_staff(event["by"])
-    if staff is None:
-        return json.dumps(sign(get_ack(event["eventId"], event["meetingId"],
-                                       content={"details": {"errorCode": EventStreamError.STAFF_NOT_FOUND.value}},
-                                       ack_type=MeetingEventType.ACK_ERR.value)))
+    try:
+        staff = Staff.parse(db.get_staff(event.by))
+    except KeyError as ke:
+        log.error(ke)
+        traceback.print_tb(ke.__traceback__)
+        return json.dumps(sign(get_error_ack(event.id, event.meeting_id,
+                                  content=AckErrorContent(error_code=EventError.STAFF_NOT_FOUND,
+                                                      details=''))).to_json_dict())
+    except TypeError as te:
+        log.error(te)
+        traceback.print_tb(te.__traceback__)
+        return json.dumps(sign(get_error_ack(event.id, event.meeting_id,
+                                  content=AckErrorContent(error_code=EventError.STAFF_NOT_FOUND,
+                                                      details=''))).to_json_dict())
 
     # Get the meeting
-    meeting = db.get_meeting(event["meetingId"])
-    if meeting is None:
-        return json.dumps(sign(get_ack(event["eventId"], event["meetingId"],
-                                       content={"details": {"errorCode": EventStreamError.MEETING_NOT_FOUND.value}},
-                                       ack_type=MeetingEventType.ACK_ERR.value)))
+    try:
+        meeting = Meeting.parse(db.get_meeting(event.meeting_id))
+    except KeyError as ke:
+        log.error(ke)
+        traceback.print_tb(ke.__traceback__)
+        return json.dumps(sign(get_error_ack(event.id, event.meeting_id,
+                                  content=AckErrorContent(error_code=EventError.MEETING_NOT_FOUND,
+                                                      details=''))).to_json_dict())
+
+    except TypeError as te:
+        log.error(te)
+        traceback.print_tb(te.__traceback__)
+        return json.dumps(sign(get_error_ack(event.id, event.meeting_id,
+                                  content=AckErrorContent(error_code=EventError.MEETING_NOT_FOUND,
+                                                      details=''))).to_json_dict())
 
     # Check signature, before trusting anything it says
-    # ok, err_event = validate_signature(event, staff, meeting)
-    # if not ok:
-    #     return json.dumps(sign(err_event))
-    #
+
+    if event.type in [MeetingEventType.JOIN, MeetingEventType.START]:  # We check contract for join and start
+        ok, err_event = validate_signature(event, staff, meeting, check_contract=True)
+        if not ok:
+            return json.dumps(sign(err_event).to_json_dict())
+    else:
+        ok, err_event = validate_signature(event, staff, meeting)
+        if not ok:
+            return json.dumps(sign(err_event).to_json_dict())
 
     # Get the roles
     roles = get_role(staff, meeting)
@@ -622,10 +792,11 @@ def room_message(event):
     # A preliminary authority check to see if the user can make any statements about the meeting
     ok, err_event = validate_preliminary_authority(event, roles)
     if not ok:
-        return json.dumps(sign(err_event))
+        return json.dumps(sign(err_event).to_json_dict())
+
 
     # Get the event type
-    event_type = MeetingEventType((event["type"]))
+    event_type = MeetingEventType(event.type)
     ack_event = None
     ok = False
     end_meeting = False
@@ -645,7 +816,6 @@ def room_message(event):
 
     if event_type == MeetingEventType.VOTE:
         ok, ack_event = vote(event, staff, meeting, roles)
-        send_privately = True
 
     if event_type == MeetingEventType.POLL_END:
         ok, ack_event = end_poll(event, staff, meeting, roles)
@@ -665,10 +835,10 @@ def room_message(event):
             end_meeting = True
 
     if not ok: # If not ok we send the error ack event privately
-        return json.dumps(sign(ack_event))
+        return json.dumps(sign(ack_event).to_json_dict())
     else:
         # If an event has been referenced
-        check_and_remove_ref_event(meeting, event.get("refEvent", ""))
+        check_and_remove_ref_event(meeting, event.ref_event)
 
         # Add ack and event to unreferenced events
         add_event_as_unref(meeting, event)
@@ -679,67 +849,18 @@ def room_message(event):
 
         if not send_privately:  # Only Broadcast if the send_privately is set to False
             # Broadcast event
-            send(json.dumps(event), broadcast_room=meeting["_id"])
-            send(json.dumps(signed_ack_event), broadcast_room=meeting["_id"])
+            send(json.dumps(event.to_json_dict()), broadcast_room=meeting.id)
+            send(json.dumps(signed_ack_event.to_json_dict()), broadcast_room=meeting.id)
 
         record(event, meeting)
         record(signed_ack_event, meeting)
 
         if end_meeting:
-            save_all_events_into_db(meeting)
-            # write_to_smart_contract
-            print ('============= END =============')
-            print (ongoing_meetings[meeting["_id"]]["start_event"]["_id"])
-            print(ack_event)
-            close_room(meeting["_id"])
+            end_meeting_session(meeting, event, signed_ack_event)
 
         # Send the ack event to the user privately as well
-        return json.dumps(signed_ack_event)
-
-
-class EventStreamError(Enum):
-    UNAUTHORISED = "unauthorized"
-    MEETING_NOT_FOUND = "meeting not found"
-    BAD_SIGNATURE = "bad signature"
-    BAD_OTP = "bad otp"
-    MALFORMED_EVENT = "malformed event"
-    TIMESTAMP_NOT_SYNC = "time stamp not in sync"
-    INTERNAL_ERROR = "internal error"
-    INVALID_REF_EVENT = "invalid ref event"
-    UNKNOWN_ERROR = "unknown error"
-    STAFF_NOT_FOUND = "staff nor found"
-    MEETING_NOT_STARTED = "meeting not started"
-    MEETING_NOT_JOINED = "meeting not joined"
-    POLL_NOT_FOUND = "poll not found"
-    INVALID_VOTE_OPTION = "invalid vote option"
-    PATIENT_NOT_FOUND = "patient not found"
-    MEETING_ALREADY_STARTED = "meeting already started"
-    ALREADY_VOTED = "already voted"
-    BAD_SESSION_KEY_SIGNATURE = "bad session key signature"
-    SESSION_KEY_NOT_FOUND = "session key not found"
-
+        return json.dumps(signed_ack_event.to_json_dict())
 
 
 if __name__ == '__main__':
     socketio.run(app, host="localhost", port=51235)
-
-# def validate_room(event, meeting) -> (bool, dict):
-#     room = event.get("room", None)
-#     # check if event contains a room
-#     if room is None:
-#         err_ack = get_ack(event["eventId"], event["meetingId"], content={"details" : { "errorCode": EventStreamError.MALFORMED_EVENT,
-#                                                                          "errorDetails": "Missing field: 'room'"},
-#                           ack_type=MeetingEventType.ACK_ERR.value)
-#         return False, err_ack
-#
-#     # check if the room is correct
-#     if ongoing_meetings[meeting["_id"]]["room"] != room:
-#         err_ack = get_ack(event["eventId"], event["meetingId"], content={"details" : { "errorCode": EventStreamError.INVALID_ROOM},
-#                           ack_type=MeetingEventType.ACK_ERR.value)
-#         return False, err_ack
-#
-#     return True, None
-#
-# Check if th
-
-# Check if it has room, as its not a mandatory field and not required for every OP, its not part of JSON schema

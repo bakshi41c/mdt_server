@@ -10,7 +10,8 @@ class Auth:
     def __init__(self, config):
         self.config = config
         self.auth_key_path = config["auth"]["key_path"]
-        self.block_chain_provider_url = config["auth"]["bc_provider_url"]
+        self.block_chain_provider_url = config["smart_contract"]["bc_provider_url"]
+
         self.dee_id_abi_path = config["auth"]["deeid_abi_path"]
 
         with open(self.auth_key_path) as keyfile:
@@ -24,21 +25,21 @@ class Auth:
 
         self.w3 = Web3(Web3.HTTPProvider(self.block_chain_provider_url))
 
-    def sign_event(self, event) -> dict:
+    def sign_event(self, event_dict) -> dict:
         log.debug("Signing event: ")
-        log.debug(event)
-        event.pop("eventId", None)
-        event['by'] = self.get_public_key_as_hex_string()
-        msg = bencode.encode(event).decode("utf-8")
+        log.debug(event_dict)
+        event_dict.pop("_id", None)
+        event_dict['by'] = self.get_public_key_as_hex_string()
+        msg = bencode.encode(event_dict).decode("utf-8")
         msg_hash = defunct_hash_message(text=msg)
         signed_message = w3.eth.account.signHash(msg_hash, private_key=self.server_private_key)
-        event["eventId"] = signed_message['signature'].hex()
-        return event
+        event_dict["_id"] = signed_message['signature'].hex()
+        return event_dict
 
 
-    def get_sig_address_from_event(self, event) -> bool:
-        signature = event.pop("eventId", None)
-        msg = bencode.encode(event).decode("utf-8")
+    def get_sig_address_from_event(self, event_dict) -> bool:
+        signature = event_dict.pop("_id", None)
+        msg = bencode.encode(event_dict).decode("utf-8")
         return self.get_sig_address_from_signature(msg, signature)
 
 
@@ -52,11 +53,11 @@ class Auth:
         return '0x' + self.server_eth_address
 
 
-    def ethkey_in_deeid_contract(self, ethkey, deeid):
-        # TODO: [TEST]
+    def ethkey_in_deeid_contract(self, ethkey, deeid_contract):
+        # TODO: [TEST]§1
         return True
         w3.eth.defaultAccount = self.server_eth_address
-        dee_id_contract = w3.eth.contract(address=deeid, abi=self.dee_id_abi,)
+        dee_id_contract = w3.eth.contract(address=deeid_contract, abi=self.dee_id_abi,)
         len_k = dee_id_contract.functions.lenKeys().call()
 
         for i in range(0, len_k):

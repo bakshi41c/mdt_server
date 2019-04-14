@@ -11,11 +11,11 @@ class Role(Enum):
 
 def get_role(staff, meeting) -> List[Role]:
     roles = []
-
-    if meeting["host"] == staff["_id"]:
+    if meeting.host == staff.id:
         roles.append(Role.HOST)
 
-    if staff["_id"] in meeting["staff"]:
+    if staff.id in meeting.staff:
         roles.append(Role.PARTICIPANT)
+
 
     return roles

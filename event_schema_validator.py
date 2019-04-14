@@ -1,5 +1,5 @@
 import json
-from meeting_event import MeetingEventType
+from model import MeetingEventType
 from jsonschema import validate as validate_schema, ValidationError
 import log as logger
 
@@ -59,7 +59,7 @@ def validate(json_data) -> (bool, str):
 # #
 # pdc_event = {
 #     "by": "publicKey [onlyHost]",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "meetingId": "",
 #     "refEvent": "",
 #     "timestamp": 0,
@@ -75,7 +75,7 @@ def validate(json_data) -> (bool, str):
 # start_event = {
 #     "by": "publicKey [onlyHost]",
 #     "meetingId": "",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "timestamp": 0,
 #     "type": "start",
 #     "content": {
@@ -86,7 +86,7 @@ def validate(json_data) -> (bool, str):
 # join_event = {
 #     "by": "publicKey",
 #     "refEvent": "",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "meetingId": "",
 #     "timestamp": 0,
 #     "type": "join",
@@ -97,7 +97,7 @@ def validate(json_data) -> (bool, str):
 #
 # leave_event = {
 #     "by": "publicKey [onlyHost]",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "meetingId": "",
 #     "timestamp": 0,
@@ -107,7 +107,7 @@ def validate(json_data) -> (bool, str):
 #
 # poll_event = {
 #     "by": "publicKey",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "meetingId": "",
 #     "refEvent": "",
 #     "timestamp": 0,
@@ -122,7 +122,7 @@ def validate(json_data) -> (bool, str):
 #
 # vote_event = {
 #     "by": "publicKey",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "meetingId": "",
 #     "timestamp": 0,
@@ -136,7 +136,7 @@ def validate(json_data) -> (bool, str):
 #
 # poll_end_event = {
 #     "by": "publicKey [hostOnly]",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "meetingId": "",
 #     "timestamp": 0,
@@ -147,7 +147,7 @@ def validate(json_data) -> (bool, str):
 #
 # comment_event = {
 #     "by": "publicKey",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "timestamp": 0,
 #     "type": "comment",
@@ -160,7 +160,7 @@ def validate(json_data) -> (bool, str):
 #
 # reply_event = {
 #     "by": "publicKey",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "timestamp": 0,
 #     "meetingId": "",
@@ -173,7 +173,7 @@ def validate(json_data) -> (bool, str):
 #
 # discussion_event = {
 #     "by": "publicKey [onlyHost]",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "timestamp": 0,
 #     "meetingId": "",
@@ -186,7 +186,7 @@ def validate(json_data) -> (bool, str):
 #
 # disagree_event = {
 #     "by": "publicKey",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "timestamp": 0,
 #     "meetingId": "",
@@ -196,7 +196,7 @@ def validate(json_data) -> (bool, str):
 #
 # end_event = {
 #     "by": "publicKey [onlyHost]",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "timestamp": 0,
 #     "meetingId": "",
@@ -206,7 +206,7 @@ def validate(json_data) -> (bool, str):
 #
 # ack_event = {
 #     "by": "publicKey [onlyServer]",
-#     "eventId": "signature(event)",
+#     "_id": "signature(event)",
 #     "refEvent": "",
 #     "timestamp": 0,
 #     "meetingId": "",
