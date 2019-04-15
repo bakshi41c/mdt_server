@@ -72,6 +72,9 @@ def gen_patient_data():
 
 def gen_staff_data():
     acct = w3.eth.account.create(str(uuid.uuid4()))
+    # [pub, private]
+    print([acct.address, acct.privateKey.hex()])
+
     return {
         "_id": acct.address,
         "name": first_name[randint(0, len(first_name) - 1)] + " " + last_name[randint(0, len(last_name) - 1)],
@@ -92,11 +95,10 @@ if __name__ == '__main__':
         patients.append(gen_patient_data())
         staff.append(gen_staff_data())
 
-    # print(patients)
-    # print(staff)
     staff_col.insert(deeid_user_a)
     staff_col.insert_many(staff)
     patient_col.insert_many(patients)
+
 
 
 

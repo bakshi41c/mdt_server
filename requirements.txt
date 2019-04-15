@@ -1,3 +1,4 @@
+PyJWT
 web3
 bencode.py
 websockets
