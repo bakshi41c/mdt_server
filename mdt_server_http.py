@@ -70,7 +70,7 @@ def get_meetings():
     if staff is None:
         return "Unable to authenticate, Check JWT", 401
 
-    all_meetings = db.get_all_meetings()
+    all_meetings = db.get_all_meetings_for_staff(staff["_id"])
     return jsonify(all_meetings)
 
 

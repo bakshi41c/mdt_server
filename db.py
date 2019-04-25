@@ -49,7 +49,7 @@ class Database:
     def get_all_meetings(self):
         return list(self.meeting_col.find())
 
-    def get_all_meeting(self, staff_id):
+    def get_all_meetings_for_staff(self, staff_id):
         return self.meeting_col.find(
             {"staff": staff_id})
 
