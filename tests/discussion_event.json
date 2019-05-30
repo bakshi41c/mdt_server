@@ -1,0 +1,11 @@
+{
+  "_id": "0x98de92adab7827a03ad6d25edc98934dfae889bab1074b5cfae9e8d095d5e4221583ea5df476d3e0bfa6ed47fc2d6fd927685e9130bb6c6a27da4d06aaaac9a81c",
+  "by": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+  "content": {
+    "patient": "3069ab8b-2a44-4993-9fa2-4218dd3f2631"
+  },
+  "meetingId": "b05674b1-400b-4411-a668-71203331c67a",
+  "refEvent": "0xff52779cf0b4848f9b4851131503c4154b76278fed8fb1a41615541df8ca40642670e052226fcdae32d4fbb4dbfa8563b559b4476f82d295d135cdb3546e2b6b1b",
+  "timestamp": 1555286311,
+  "type": "discussion"
+}

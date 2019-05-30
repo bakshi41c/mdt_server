@@ -46,7 +46,7 @@ def validate(json_data) -> (bool, str):
 
     # Validate with the right content schema
     try:
-        validate_schema(instance=json_data["content"], schema=event_content_schema)
+        validate_schema(instance=json_data.get("content", {}), schema=event_content_schema)
     except ValidationError as ve:
         log.debug(str(type(ve)) + ', ' + str(ve))
         return False, str(ve.message)

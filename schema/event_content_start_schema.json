@@ -6,7 +6,8 @@
   "title": "The Start Content Schema",
   "default": null,
   "required": [
-    "otp"
+    "otp",
+    "meeting"
   ],
   "properties": {
     "otp": {
@@ -16,6 +17,11 @@
       "examples": [
         "4256"
       ]
+    },
+    "meeting": {
+      "$id": "#/properties/meeting",
+      "type": "object",
+      "title": "The Content"
     }
   }
 }

@@ -1,0 +1,20 @@
+{"_id": "0x47f22752326fca1d3ff19caa46d82617fe7299c81764d97917b2c51a0e1729d2638ea5767d5a6c8e24ad076ea761790f4ac59c6092ce2536a16cec8228376aea1b",
+  "by": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+  "content": {
+    "deeIDLoginSigSigned": {
+      "data": "0xB2d77F16EC4080598Eb5B8EEaDB3FfF8754970A0",
+      "deeID": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+      "expirytime": "",
+      "msg": "2a7d1a6c-3d2c-45f2-b56f-54f10152289e0xa78e5bb6ff6a849e120985d32532e5067f262e19undefined0xB2d77F16EC4080598Eb5B8EEaDB3FfF8754970A0",
+      "signature": "0x89279b3fa48c70574b1185b8a1f69ecd98aa19b8d0691c29fecb94f2e9d071b47a99807cfb625cd4e0b03c351b89a2291b1c1344d420334fd5ae7818a9d17dbe1c",
+      "type": "loginSigSigned",
+      "uID": "2a7d1a6c-3d2c-45f2-b56f-54f10152289e"
+    },
+    "key": "0xB2d77F16EC4080598Eb5B8EEaDB3FfF8754970A0",
+    "otp": "8636"
+  },
+  "meetingId": "b05674b1-400b-4411-a668-71203331c67a",
+  "refEvent": "join",
+  "timestamp": 1555279322,
+  "type": "join"
+}

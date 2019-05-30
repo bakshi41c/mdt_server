@@ -22,6 +22,17 @@ contract('MeetingContract', function(accounts) {
     assert.equal(results[1], 'end_event_hash', 'end event is correct')
   })
 
+  it('re-setting event hashes throws error', async () => {
+    const contract = await MeetingContract.deployed();
+    try {
+        await contract.setEvents('new_start_event_hash', 'new end_event_hash');
+    } catch (error) {
+        err = error
+    }
+    assert.ok(err instanceof Error)
+  })
+
+
   it('non participant approving throws error', async () => {
     const contract = await MeetingContract.deployed();
     try {

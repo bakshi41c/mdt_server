@@ -50,9 +50,8 @@ class Database:
         return list(self.meeting_col.find())
 
     def get_all_meetings_for_staff(self, staff_id):
-        return self.meeting_col.find(
-            {"staff": staff_id})
-
+        return  list(self.meeting_col.find(
+            {"staff": staff_id}))
 
     ###################
     # PATIENT-MEETING #
@@ -90,6 +89,9 @@ class Database:
     def get_all_patients(self):
         return list(self.patient_col.find())
 
+    def insert_patient(self, patient):
+        return self.patient_col.insert_one(patient)
+
     ##########
     # EVENTS #
     ##########
@@ -116,3 +118,5 @@ class Database:
     def get_all_staff(self):
         return list(self.staff_col.find())
 
+    def insert_staff(self, staff):
+        return self.staff_col.insert_one(staff)

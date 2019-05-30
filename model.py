@@ -8,6 +8,7 @@ class Meeting:
         self.started = False
         self.ended = False
         self.contract_id = False
+        self.start_event_id = ''
         self.host = ''
         self.date = ''
         self.staff = []
@@ -20,6 +21,7 @@ class Meeting:
             'started': 'started',
             'ended': 'ended',
             'contractId': 'contract_id',
+            'startEventId': 'start_event_id',
             'host': 'host',
             'date': 'date',
             'staff': 'staff',
@@ -35,12 +37,12 @@ class Meeting:
 
         return m
 
-
     def to_json_dict(self):
         m = dict()
         for json_key, attr in self._json_key_map.items():
             m[json_key] = self.__getattribute__(attr)
         return m
+
 
 class Staff:
     def __init__(self):
@@ -147,6 +149,7 @@ class StartContent:
         self.otp = ''
         self.key = ''
         self.deeid_login_sig_signed = DeeIdLoginSigSigned()
+        self.meeting = Meeting()
         self._json_key_map = {
             'otp' : 'otp',
             'key' : 'key',
@@ -168,7 +171,6 @@ class JoinContent:
         self.otp = ''
         self.key = ''
         self.deeid_login_sig_signed = DeeIdLoginSigSigned()
-        self.meeting = Meeting()
         self._json_key_map = {
             'otp': 'otp',
             'key': 'key',
@@ -417,7 +419,6 @@ class AckEndContent:
         for json_key, attr in self._json_key_map.items():
             aec[json_key] = self.__getattribute__(attr)
         return aec
-
 
 
 class MeetingEventType(Enum):

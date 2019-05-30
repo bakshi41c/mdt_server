@@ -18,17 +18,15 @@ import copy
 import event_schema_validator
 import log as logger
 import logging
-from model import Event, Staff, Meeting, AckErrorContent, EventError, JoinContent, DeeIdLoginSigSigned, MeetingEventType, \
+from model import Event, Staff, Meeting, AckErrorContent, EventError, JoinContent, DeeIdLoginSigSigned, \
+    MeetingEventType, \
     StartContent, AckJoinContent, AckEndContent, PollContent, VoteContent, PDCContent, AckPollEndContent
 
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = 'TVBam9S&W7IbTC8W'
-
 socketio = SocketIO(app)
-
 CORS(app)
-
 config = config.get_config()
 db = Database(config["database"]["db_name"], config["database"]["ip"], config["database"]["port"])
 log = logger.get_logger('web_server_socketio')
@@ -37,29 +35,36 @@ ongoing_meetings = {}
 auth = authentication.Auth(config)
 smart_contract = meeting_contract_helper.MeetingContractHelper(config)
 
-class OngiongMeeting:
+
+class OngoingMeeting:
     def __init__(self):
         self.otp = ''
         self.host = ''
         self.start_event = None
-        self.events = {} # type: dict[str, Event]
-        self.polls = {} # type: dict[str, Poll]
+        self.events = {}  # type: dict[str, Event]
+        self.polls = {}  # type: dict[str, Poll]
         self.unref_events = {}  # type: dict[str, Event]
-        self.session_keys = {} # type: dict[str, str]
+        self.session_keys = {}  # type: dict[str, str]
         self.latest_join_events = {}  # type: dict[str, Event]
 
 
 class Poll:
     def __init__(self):
-        self.votes = {} # type: dict[str, Event]
+        self.votes = {}  # type: dict[str, Event]
+
 
 def start(event, staff, meeting, roles) -> (bool, dict):
+    """
+    Handles the START event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing Start event")
     # Check if the user is allowed to start
     if Role.HOST not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                      details=''))
+                                                            details=''))
 
     # Check if meeting has already started, if it has send the otp, in case the host has forgotten
     started, _ = validate_meeting_started(event, meeting)
@@ -67,7 +72,7 @@ def start(event, staff, meeting, roles) -> (bool, dict):
         otp = ongoing_meetings[meeting.id].otp
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.MEETING_ALREADY_STARTED,
-                                                      details='Meeting already started, otp : ' + otp))
+                                                            details='Meeting already started, otp : ' + otp))
 
     # Parse the content of event as StartContent
     try:
@@ -82,7 +87,7 @@ def start(event, staff, meeting, roles) -> (bool, dict):
         traceback.print_tb(ke.__traceback__)
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
-                                                      details="Content doesnt have sufficient values"))
+                                                            details="Content doesnt have sufficient values"))
 
     # Authenticate new key
     msg = uid + staff.id + expiry + new_key
@@ -91,10 +96,10 @@ def start(event, staff, meeting, roles) -> (bool, dict):
     if not ok:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                      details="New pubKey cannot be authenticated"))
+                                                            details="New pubKey cannot be authenticated"))
     print("OTP: ", sc.otp)
     #  Create new meeting session
-    om = OngiongMeeting()
+    om = OngoingMeeting()
     om.otp = sc.otp
     om.host = staff.id
     om.start_event = event
@@ -102,7 +107,7 @@ def start(event, staff, meeting, roles) -> (bool, dict):
     om.polls = {}
     om.unref_events = {}
     om.session_keys = {
-        staff.id : new_key
+        staff.id: new_key
     }
     om.latest_join_events = []
 
@@ -115,13 +120,15 @@ def start(event, staff, meeting, roles) -> (bool, dict):
         log.error(e)
         traceback.print_tb(e.__traceback__)
         return False, get_error_ack(event.id, event.meeting_id,
-                                content=AckErrorContent(error_code=EventError.INTERNAL_ERROR,
-                                                        details='Smart Contract could not be deployed'))
+                                    content=AckErrorContent(error_code=EventError.INTERNAL_ERROR,
+                                                            details='Smart Contract could not be deployed'))
 
     log.debug("Deployed smart contract!")
     log.debug(meeting.contract_id)
     ongoing_meetings[meeting.id] = om
-    meeting.started = True # Set the meeting as started in the db
+
+    meeting.started = True  # Set the meeting as started in the db
+    meeting.start_event_id = event.id  # Set the start event
     db.update_meeting(meeting.id, meeting.to_json_dict())
 
     # ACK
@@ -130,12 +137,17 @@ def start(event, staff, meeting, roles) -> (bool, dict):
 
 
 def join(event, staff, meeting, roles) -> (bool, dict):
+    """
+    Handles the JOIN event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing Join event")
     # Check if the user is allowed to join
     if Role.PARTICIPANT not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                    details=''))
+                                                            details=''))
 
     # Check if meeting has started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -143,7 +155,13 @@ def join(event, staff, meeting, roles) -> (bool, dict):
         return False, err_ack
 
     # Get Meeting session details
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
+
+    # Check if ref event is a start event
+    if event.ref_event != meeting_session_details.start_event.id:
+        return False, get_error_ack(event.id, event.meeting_id,
+                                    content=AckErrorContent(error_code=EventError.INVALID_REF_EVENT,
+                                                            details='Ref Event must be the Start event'))
 
     # Parse the content of event as JoinContent
     try:
@@ -158,14 +176,13 @@ def join(event, staff, meeting, roles) -> (bool, dict):
         traceback.print_tb(ke.__traceback__)
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
-                                                                    details="Content doesnt have sufficient values"))
+                                                            details="Content doesnt have sufficient values"))
 
     # Check OTP
     if not jc.otp == meeting_session_details.otp:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.BAD_OTP,
-                                                                    details=''))
-
+                                                            details=''))
 
     # Authenticate new key
     msg = uid + staff.id + expiry + new_key
@@ -175,7 +192,7 @@ def join(event, staff, meeting, roles) -> (bool, dict):
     if not ok:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                    details="New pubKey cannot be authenticated"))
+                                                            details="New pubKey cannot be authenticated"))
 
     meeting_session_details.session_keys[staff.id] = new_key
 
@@ -195,6 +212,11 @@ def join(event, staff, meeting, roles) -> (bool, dict):
 
 
 def leave(event, staff, meeting):
+    """
+    Handles the LEAVE event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing Leave event")
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -211,17 +233,6 @@ def leave(event, staff, meeting):
     if not ok:
         return False, err_ack
 
-    # Get Meeting session details
-    # meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
-    #
-    # # Check if they are in the meeting, if so, remove them, otherwise its an error
-    # if staff.id in meeting_session_details.joined_particpants:
-    #     meeting_session_details.joined_particpants.remove(staff.id)
-    # else:
-    #     return False, get_error_ack(event.id, event.meeting_id,
-    #                                 content=AckErrorContent(error_code=EventError.MEETING_NOT_JOINED,
-    #                                                                 details=""))
-
     leave_room(meeting.id)
 
     # ACK
@@ -230,12 +241,17 @@ def leave(event, staff, meeting):
 
 
 def end(event, staff, meeting, roles):
+    """
+    Handles the END event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing End event")
     # Check whether they should be allowed to end
     if Role.HOST not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                    details=''))
+                                                            details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -253,7 +269,7 @@ def end(event, staff, meeting, roles):
         return False, err_ack
 
     # Get Meeting session details
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
 
     # ACK  -- WE get ACK early as we need the signature for smart contract later, and there could be errors with that
     eac = AckEndContent(list(meeting_session_details.unref_events.keys()))
@@ -262,12 +278,17 @@ def end(event, staff, meeting, roles):
 
 
 def poll(event, staff, meeting, roles):
+    """
+    Handles the POLL event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing Poll event")
     # Check whether they should be allowed to start a poll
     if Role.HOST not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                             details=''))
+                                                            details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -285,7 +306,7 @@ def poll(event, staff, meeting, roles):
         return False, err_ack
 
     # Get Meeting session details
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
 
     # Parsing content as PollContent
     try:
@@ -295,7 +316,7 @@ def poll(event, staff, meeting, roles):
         traceback.print_tb(ke.__traceback__)
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
-                                                                    details="Content doesnt have sufficient values"))
+                                                            details="Content doesnt have sufficient values"))
 
     new_poll = Poll()
     poll.votes = {}
@@ -308,12 +329,17 @@ def poll(event, staff, meeting, roles):
 
 
 def vote(event, staff, meeting, roles):
+    """
+    Handles the VOTE event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing Vote Event")
     # Check whether they should be allowed to vote
     if Role.PARTICIPANT not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                    details=''))
+                                                            details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -326,14 +352,14 @@ def vote(event, staff, meeting, roles):
         return False, err_ack
 
     # Get Meeting session details
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
 
     # Check if refEvent is a poll
     poll = meeting_session_details.polls.get(event.ref_event, None)
     if poll is None:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.POLL_NOT_FOUND,
-                                                                    details=''))
+                                                            details=''))
 
     # Parsing content as VoteContent
     try:
@@ -343,19 +369,13 @@ def vote(event, staff, meeting, roles):
         log.error(ke)
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
-                                                                    details="Content doesnt have sufficient values"))
-    #
-    # # Check if vote is one of the options
-    # if vc.vote not in poll.options:
-    #     return False, get_error_ack(event.id, event.meeting_id,
-    #                                 content=AckErrorContent(error_code=EventError.INVALID_VOTE_OPTION,
-    #                                                                 details='').to_json_dict())
+                                                            details="Content doesnt have sufficient values"))
 
     # Check if already voted
     if event.by in poll.votes:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.ALREADY_VOTED,
-                                                                    details=''))
+                                                            details=''))
 
     log.debug("Adding the vote to votes")
     poll.votes[staff.id] = event
@@ -366,12 +386,17 @@ def vote(event, staff, meeting, roles):
 
 
 def end_poll(event, staff, meeting, roles):
+    """
+    Handles END_POLL event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing End Poll event")
     # Check whether they should be allowed to end poll
     if Role.HOST not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                    details=''))
+                                                            details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -384,21 +409,21 @@ def end_poll(event, staff, meeting, roles):
         return False, err_ack
 
     # Get Meeting session details
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
 
     #  Check if refEvent is a poll
     poll = meeting_session_details.polls.get(event.ref_event, None)
     if poll is None:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.POLL_NOT_FOUND,
-                                                                    details=''))
+                                                            details=''))
 
     vote_event_ids = [event.id for event in list(poll.votes.values())]
     poll_end_ack_event = AckPollEndContent(votes=vote_event_ids)
 
     # ACK
     ack = get_ack(event.id, meeting.id,
-                    type=MeetingEventType.ACK_POLL_END, content=poll_end_ack_event)
+                  type=MeetingEventType.ACK_POLL_END, content=poll_end_ack_event)
 
     # Delete poll
     meeting_session_details.polls.pop(event.ref_event)
@@ -407,12 +432,17 @@ def end_poll(event, staff, meeting, roles):
 
 
 def comment_reply_disagreement(event, staff, meeting, roles):
+    """
+    Handles COMMENT and REPLY and DISAGREEMENT event as they have the same protocol
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing Comment/Reply/Disagreement event")
     # Check whether they should be allowed to vote
     if Role.PARTICIPANT not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                    details=''))
+                                                            details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -435,12 +465,17 @@ def comment_reply_disagreement(event, staff, meeting, roles):
 
 
 def discussion(event, staff, meeting, roles):
+    """
+    Handles the DISCUSSION event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing Discussion event")
     # Check whether they should be allowed to start discussion
     if Role.HOST not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                    details=''))
+                                                            details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -463,12 +498,17 @@ def discussion(event, staff, meeting, roles):
 
 
 def patient_data_change(event, staff, meeting, roles):
+    """
+    Handles PATIENT_DATA_CHANGE event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug("Processing PDC event")
     # Check whether they should be allowed to start discussion
     if Role.HOST not in roles:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                    details=''))
+                                                            details=''))
 
     # Check if meeting actually started
     ok, err_ack = validate_meeting_started(event, meeting)
@@ -493,7 +533,7 @@ def patient_data_change(event, staff, meeting, roles):
         log.error(ke)
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
-                                                                    details="Content doesnt have sufficient values"))
+                                                            details="Content doesnt have sufficient values"))
 
     # Check if patient actually exists
     patient_id = pdc.patient
@@ -501,39 +541,57 @@ def patient_data_change(event, staff, meeting, roles):
     if patient is None:
         return False, get_error_ack(event.id, event.meeting_id,
                                     content=AckErrorContent(error_code=EventError.PATIENT_NOT_FOUND,
-                                                                    details=''))
+                                                            details=''))
 
     # ACK
     ack = get_ack(event.id, meeting.id)
     return True, ack
 
 
-def sign(event : Event):
+def sign(event: Event):
+    """
+    signs an event
+    :return: signed Event
+    """
     signed_event = auth.sign_event(event.to_json_dict())
     return Event.parse(signed_event)
 
 
 def send(signed_event, broadcast_room=None):
+    """
+    Broadcasts an event on a room
+    """
     if broadcast_room is None:
         emit_ws('room-message', signed_event)
     else:
         emit_ws('room-message', signed_event, room=broadcast_room)
 
 
-def update_attended_staff(meeting : Meeting, staff : Staff):
+def update_attended_staff(meeting: Meeting, staff: Staff):
+    """
+    Updates the Database with staff members who have attended the meeting
+    """
     if staff.id not in meeting.attended_staff:
         meeting.attended_staff.append(staff.id)
         db.update_meeting(meeting.id, meeting.to_json_dict())
 
-def record(event: Event, meeting : Meeting):
+
+def record(event: Event, meeting: Meeting):
+    """
+    Records an event into the database
+    """
     log.debug("Storing: " + event.id)
     log.debug(event)
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
     meeting_session_details.events[event.id] = event
     db.insert_event(event.to_json_dict())
 
 
 def get_error_ack(ref_event, meeting_id, content=None):
+    """
+    Helper function to get a pre populated ACK_ERR Event
+    :return: an Event with type as ACK_ERR
+    """
     ack_event = Event()
     ack_event.type = MeetingEventType.ACK_ERR
     ack_event.meeting_id = meeting_id
@@ -547,6 +605,10 @@ def get_error_ack(ref_event, meeting_id, content=None):
 
 
 def get_ack(ref_event, meeting_id, type=MeetingEventType.ACK, content=None):
+    """
+    Helper function to get a pre populated ACK Event
+    :return: an Event with type as ACK
+    """
     ack_event = Event()
     ack_event.type = type
     ack_event.meeting_id = meeting_id
@@ -558,57 +620,83 @@ def get_ack(ref_event, meeting_id, type=MeetingEventType.ACK, content=None):
     ack_event.content = content
     return ack_event
 
-def add_event_as_unref(meeting : Meeting, event : Event):
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+
+def add_event_as_unref(meeting: Meeting, event: Event):
+    """
+    Appends the set of unreferenced events
+    """
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
     meeting_session_details.unref_events[event.id] = None
 
 
 def check_and_remove_ref_event(meeting, ref_event):
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    """
+    Checks if the event exists, and removes it from the set of unreferenced events
+    """
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
     meeting_session_details.unref_events.pop(ref_event, None)
 
 
 def validate_ref_event(event, meeting) -> (bool, dict):
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    """
+    Validates a reference event (checks if it exists)
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
     ref_valid = event.ref_event in meeting_session_details.events
 
     if not ref_valid:
         err_ack = get_error_ack(event.id, event.meeting_id,
                                 content=AckErrorContent(error_code=EventError.INVALID_REF_EVENT,
-                                                                    details=''))
+                                                        details=''))
         return False, err_ack
     return True, None
 
 
-def validate_meeting_started(event : Event, meeting : Meeting) -> (bool, dict):
+def validate_meeting_started(event: Event, meeting: Meeting) -> (bool, dict):
+    """
+    Validates if a meeting has started or not
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     meeting_started = meeting.id in ongoing_meetings
     if not meeting_started:
         err_ack = get_error_ack(event.id, event.meeting_id,
                                 content=AckErrorContent(error_code=EventError.MEETING_NOT_STARTED,
-                                                                    details=''))
+                                                        details=''))
         return False, err_ack
 
     return True, None
 
 
 def validate_join(event, staff, meeting) -> (bool, dict):
+    """
+    Validates if a staff has joined the meeting or not
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     joined = staff.id in meeting.attended_staff
     if not joined:
         err_ack = get_error_ack(event.id, event.meeting_id,
                                 content=AckErrorContent(error_code=EventError.MEETING_NOT_JOINED,
-                                                                    details=''))
+                                                        details=''))
         return False, err_ack
 
     return True, None
 
 
 def validate_timestamp(event) -> (bool, dict):
+    """
+    Validates the timestamp of an event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     current_time = int(time.time())
     if not (current_time - timestamp_tolerance <= event.timestamp <= current_time + timestamp_tolerance):
         err_event = get_error_ack(event.id, event.meeting_id,
                                   content=AckErrorContent(error_code=EventError.TIMESTAMP_NOT_SYNC,
-                                                                    details='Server Timestamp : ' + str(current_time)))
-
+                                                          details='Server Timestamp : ' + str(current_time)))
 
         return False, err_event
 
@@ -616,11 +704,16 @@ def validate_timestamp(event) -> (bool, dict):
 
 
 def validate_schema(event_dict) -> (bool, dict):
+    """
+    Validates the schema using JSON Schema
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     ok, err = event_schema_validator.validate(event_dict)
     if not ok:
         err_event = get_error_ack("unknown", "unknown",
                                   content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
-                                                      details=err))
+                                                          details=err))
 
         return False, err_event
 
@@ -628,6 +721,11 @@ def validate_schema(event_dict) -> (bool, dict):
 
 
 def validate_signature(event, staff, meeting, check_contract=False) -> (bool, dict):
+    """
+    Validates the signature of an event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     log.debug('Validating Signature...')
 
     sig_addr = str(auth.get_sig_address_from_event(event.to_json_dict()))
@@ -640,7 +738,7 @@ def validate_signature(event, staff, meeting, check_contract=False) -> (bool, di
         log.debug('Eth key in contract? ' + str(ok))
     else:
         # Get Meeting session details to get the session key
-        meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+        meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
         meeting_session_key = None
         if meeting_session_details is not None:
             meeting_session_key = meeting_session_details.session_keys.get(staff.id, None)
@@ -654,12 +752,12 @@ def validate_signature(event, staff, meeting, check_contract=False) -> (bool, di
         ok = sig_addr.lower() == meeting_session_key.lower()
         log.debug('Sig Addr ' + sig_addr)
         log.debug('Session key ' + meeting_session_key)
-        log.debug('Session key matches up? '+ str(ok))
+        log.debug('Session key matches up? ' + str(ok))
 
     if not ok:
         err_event = get_error_ack(event.id, event.meeting_id,
                                   content=AckErrorContent(error_code=EventError.BAD_SIGNATURE,
-                                                      details=''))
+                                                          details=''))
 
         return False, err_event
 
@@ -667,18 +765,26 @@ def validate_signature(event, staff, meeting, check_contract=False) -> (bool, di
 
 
 def validate_preliminary_authority(event, roles) -> (bool, dict):
+    """
+    Does preliminary checks to see if the user is authorised to post the event
+    :return: returns a tuple of (bool, dict). The bool is if the execution was ok,
+    dict returns the error event in case the execution failed
+    """
     if not roles:
         err_event = get_error_ack(event.id, event.meeting_id,
                                   content=AckErrorContent(error_code=EventError.UNAUTHORISED,
-                                                                  details=''))
+                                                          details=''))
 
         return False, err_event
     return True, None
 
 
 def end_meeting_session(meeting, event, signed_ack_event):
+    """
+    Gracefully ends a meeting by populating smart contract and the database
+    """
     # Write the event hash of the meeting to smart contract  - COSTS MONEY
-    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngiongMeeting
+    meeting_session_details = ongoing_meetings.get(meeting.id, None)  # type: OngoingMeeting
     try:
         start_hash = meeting_session_details.start_event.id
         end_hash = signed_ack_event.id
@@ -694,7 +800,6 @@ def end_meeting_session(meeting, event, signed_ack_event):
     meeting.ended = True
     db.update_meeting(meeting.id, meeting.to_json_dict())
 
-
     print('============= MEETING END =============')
     print(ongoing_meetings[meeting.id])
     print(signed_ack_event)
@@ -704,7 +809,9 @@ def end_meeting_session(meeting, event, signed_ack_event):
 
 @socketio.on('room-message')
 def room_message(event_string):
-
+    """
+    Main function that handles all events that enter through the web socket
+    """
     # Parse json as dict
     try:
         event_json = json.loads(event_string)
@@ -713,9 +820,8 @@ def room_message(event_string):
         log.error(ve)
         traceback.print_tb(ve.__traceback__)
         return json.dumps(sign(get_error_ack("unknown", "unknown",
-                                  content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
-                                                      details='Cant parse message as JSON'))).to_json_dict())
-
+                                             content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                                     details='Cant parse message as JSON'))).to_json_dict())
 
     # Validate JSON dict using schema
     ok, err_event = validate_schema(event_json)
@@ -725,7 +831,6 @@ def room_message(event_string):
         log.error("======== error_msg: " + errormsg)
         return errormsg
 
-
     # Parse dict as event object
     try:
         event = Event.parse(event_json)
@@ -734,8 +839,8 @@ def room_message(event_string):
         log.error(ve)
         traceback.print_tb(ve.__traceback__)
         return json.dumps(sign(get_error_ack("unknown", "unknown",
-                                  content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
-                                                      details='Cant parse message as Event'))).to_json_dict())
+                                             content=AckErrorContent(error_code=EventError.MALFORMED_EVENT,
+                                                                     details='Cant parse message as Event'))).to_json_dict())
 
     # Check timestamp
     ok, err_event = validate_timestamp(event)
@@ -749,14 +854,14 @@ def room_message(event_string):
         log.error(ke)
         traceback.print_tb(ke.__traceback__)
         return json.dumps(sign(get_error_ack(event.id, event.meeting_id,
-                                  content=AckErrorContent(error_code=EventError.STAFF_NOT_FOUND,
-                                                      details=''))).to_json_dict())
+                                             content=AckErrorContent(error_code=EventError.STAFF_NOT_FOUND,
+                                                                     details=''))).to_json_dict())
     except TypeError as te:
         log.error(te)
         traceback.print_tb(te.__traceback__)
         return json.dumps(sign(get_error_ack(event.id, event.meeting_id,
-                                  content=AckErrorContent(error_code=EventError.STAFF_NOT_FOUND,
-                                                      details=''))).to_json_dict())
+                                             content=AckErrorContent(error_code=EventError.STAFF_NOT_FOUND,
+                                                                     details=''))).to_json_dict())
 
     # Get the meeting
     try:
@@ -765,15 +870,15 @@ def room_message(event_string):
         log.error(ke)
         traceback.print_tb(ke.__traceback__)
         return json.dumps(sign(get_error_ack(event.id, event.meeting_id,
-                                  content=AckErrorContent(error_code=EventError.MEETING_NOT_FOUND,
-                                                      details=''))).to_json_dict())
+                                             content=AckErrorContent(error_code=EventError.MEETING_NOT_FOUND,
+                                                                     details=''))).to_json_dict())
 
     except TypeError as te:
         log.error(te)
         traceback.print_tb(te.__traceback__)
         return json.dumps(sign(get_error_ack(event.id, event.meeting_id,
-                                  content=AckErrorContent(error_code=EventError.MEETING_NOT_FOUND,
-                                                      details=''))).to_json_dict())
+                                             content=AckErrorContent(error_code=EventError.MEETING_NOT_FOUND,
+                                                                     details=''))).to_json_dict())
 
     # Check signature, before trusting anything it says
 
@@ -793,7 +898,6 @@ def room_message(event_string):
     ok, err_event = validate_preliminary_authority(event, roles)
     if not ok:
         return json.dumps(sign(err_event).to_json_dict())
-
 
     # Get the event type
     event_type = MeetingEventType(event.type)
@@ -834,7 +938,7 @@ def room_message(event_string):
         if ok:
             end_meeting = True
 
-    if not ok: # If not ok we send the error ack event privately
+    if not ok:  # If not ok we send the error ack event privately
         return json.dumps(sign(ack_event).to_json_dict())
     else:
         # If an event has been referenced

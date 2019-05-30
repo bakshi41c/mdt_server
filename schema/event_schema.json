@@ -9,7 +9,8 @@
     "meetingId",
     "_id",
     "timestamp",
-    "type"
+    "type",
+    "content"
   ],
   "properties": {
     "by": {
@@ -58,6 +59,7 @@
         "joinAck",
         "pollEndAck",
         "ackError",
+        "ackEnd",
         "end"
       ],
       "title": "EventType",
@@ -65,11 +67,6 @@
       "examples": [
         "start"
       ]
-    },
-    "room": {
-      "$id": "#/properties/room",
-      "type": "string",
-      "title": "The Room ID"
     },
     "refEvent": {
       "$id": "#/properties/refEvent",

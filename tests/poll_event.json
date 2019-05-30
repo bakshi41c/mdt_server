@@ -1,0 +1,17 @@
+{
+  "_id": "0xb617545aa4286cf093f13d226819780e6996f9a5a931b13b82c033db8c2c83fd48345903ea3fdbac6a1f20b68491fea9f503642370ca25723a0c6d08d7e18de61b",
+  "by": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+  "content": {
+    "options": [
+      "Yes",
+      "No"
+    ],
+    "patient": "",
+    "question": "Vote Check?",
+    "votingKey": "0cef88ca458ea9c4b4a2686202bc2b73da6b70c4701b97c217414162e7bf4e067f6e1f07425dd7896055a9e4fbd8349e8dd1bfe252c4e26b9859e39ddb8295af"
+  },
+  "meetingId": "b05674b1-400b-4411-a668-71203331c67a",
+  "refEvent": "0x2b9e2f40d25576f00144eb7f68839a2d70edcd97dfe7d703214d84b30896000323f2bcc67afd2bcfa21da3311205e220d6f028342c27496d812ba51ae370db371b",
+  "timestamp": 1555285058,
+  "type": "poll"
+}

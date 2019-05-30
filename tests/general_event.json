@@ -1,0 +1,9 @@
+{
+  "_id": "0x18f7ba2d216b647eedfd716297ed917a5e04b6dcd425f0e52fc1952963ce78792ee2df35c3e57f4098b92d2650375e4b4d242935a162a8c92716d5d57f5cfe411c",
+  "by": "0x1c0b2f7a73ecbf7ce694887020dbcbaaa2e126f7",
+  "refEvent": "0x6772b7f32c4bb844ae4bf4edc2fec00f36dad18d3cb00c768a004c602f5bdee830fa4b81bd7c695c378cd35cea3e26fca33d886cf03831ed4f93b8cdebe7c3cd1b",
+  "timestamp": 1555296990,
+  "meetingId": "a5521b9a-0389-4f9e-938e-6aa168a86fac",
+  "type": "ack",
+  "content": {}
+}

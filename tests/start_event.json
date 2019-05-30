@@ -1,0 +1,54 @@
+{
+  "_id": "0xb9757ff31d16cf469cfeab76e889f83e3dedc10ba6992ec9a65b279d0feba31823d43c30f1f7e33e9a71210173966c93d8092af5f4dde1db73dc334cb919d32b1c",
+  "by": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+  "content": {
+    "deeIDLoginSigSigned": {
+      "data": "0xB2d77F16EC4080598Eb5B8EEaDB3FfF8754970A0",
+      "deeID": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+      "expirytime": "",
+      "msg": "2a7d1a6c-3d2c-45f2-b56f-54f10152289e0xa78e5bb6ff6a849e120985d32532e5067f262e19undefined0xB2d77F16EC4080598Eb5B8EEaDB3FfF8754970A0",
+      "signature": "0x89279b3fa48c70574b1185b8a1f69ecd98aa19b8d0691c29fecb94f2e9d071b47a99807cfb625cd4e0b03c351b89a2291b1c1344d420334fd5ae7818a9d17dbe1c",
+      "type": "loginSigSigned",
+      "uID": "2a7d1a6c-3d2c-45f2-b56f-54f10152289e"
+    },
+    "key": "0xB2d77F16EC4080598Eb5B8EEaDB3FfF8754970A0",
+    "meeting": {
+      "_id": "b05674b1-400b-4411-a668-71203331c67a",
+      "attendedStaff": [],
+      "contractId": "",
+      "date": "2019-04-18T10:00:03.000Z",
+      "description": "April weekly meeting",
+      "ended": false,
+      "host": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+      "patients": [
+        "6014c065-b342-4aa0-97de-0a24cf39f9b9",
+        "0f5047a0-12d7-41d0-82a4-b08d541413a7",
+        "1a0cb848-6877-4453-bfa5-c86589f193ae",
+        "3d7a1a66-e9f6-4953-bfc7-73014597cb0d",
+        "610d5193-2bb1-41d8-b75e-0bdc7cb193d6",
+        "3069ab8b-2a44-4993-9fa2-4218dd3f2631"
+      ],
+      "staff": [
+        "0x3b94C961D6A18374e348094F16A928Af0170Ea0b",
+        "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+        "0x06f42Cd1000B815DBAE5a77C589EBfffAC92B900",
+        "0xe8a30CBB8650C2D03C3903E7047fca60440fd21A",
+        "0xf4638dA379e62C2aF06893155a06D79C2ef13741",
+        "0x4098B4a5336d5333E8746AAbA59a933cA3aEAf35",
+        "0x76B6Cd8931351d393FBD84460F65C393154d12bB",
+        "0xaB250eac05468f2BA9F23B39cf4964ab8dA76278",
+        "0x28F31CA2Ae0bc00BD27266A012d999245b26a29d",
+        "0x232B227AFd46a854601dcB075ff2F6ED97647D28",
+        "0x782460591713Ec2B33B6E947319976d1A210080F",
+        "0x359b88Ee6CbA3aE0bDF0CD54Fcd5Ddf22f6d5df5"
+      ],
+      "started": false,
+      "title": "MDT meeting"
+    },
+    "otp": "8636"
+  },
+  "meetingId": "b05674b1-400b-4411-a668-71203331c67a",
+  "refEvent": "genesis",
+  "timestamp": 1555279320,
+  "type": "start"
+}

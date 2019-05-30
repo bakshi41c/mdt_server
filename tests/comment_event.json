@@ -1,0 +1,12 @@
+{
+  "_id": "0x635574a746cb6a4400dd4d12238acd74e1fc67cec9f206b87ddd4f908eeb85db6741bbf52e34c75870a60771256312811616e4753795953640fdf390df46e83e1c",
+  "by": "0xa78e5bb6ff6a849e120985d32532e5067f262e19",
+  "content": {
+    "comment": "I will be back",
+    "patient": ""
+  },
+  "meetingId": "b05674b1-400b-4411-a668-71203331c67a",
+  "refEvent": "0x269cbdf2bf42f68e9e41629abf3b7e7d58f9788aa7f6fffa8cdad10361ed5ea92204a70b593bcdb1633cffbe4fe64c6a6e0c46e6a0f675de24ce557f5d70ce6b1b",
+  "timestamp": 1555279338,
+  "type": "comment"
+}

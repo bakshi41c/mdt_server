@@ -11,6 +11,7 @@ contract MeetingContract {
     }
 
     address owner;
+    bool eventsPopulated = false;
 
     Meeting public meeting;
 
@@ -32,6 +33,11 @@ contract MeetingContract {
             _;
     }
 
+    modifier eventsNotPopulated(){
+            require(!eventsPopulated);
+            _;
+    }
+
     function getOwner() view public returns(address) {
         return owner;
     }
@@ -44,9 +50,10 @@ contract MeetingContract {
         return (meeting.eventStartHash, meeting.eventEndHash);
     }
 
-    function setEvents(string memory start, string memory end) public onlyOwner {
+    function setEvents(string memory start, string memory end) public onlyOwner eventsNotPopulated {
         meeting.eventStartHash = start;
         meeting.eventEndHash = end;
+        eventsPopulated = true;
     }
 
     function approve() public onlyParticipant{

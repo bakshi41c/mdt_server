@@ -1,0 +1,17 @@
+{
+  "database" : {
+    "ip": "localhost",
+    "port" : "27017",
+    "db_name" : "mdt_meetings_test"
+  },
+  "auth" : {
+    "key_path" : "sample_server_eth_key",
+    "deeid_abi_path" : "deeid_abi.json"
+  },
+  "smart_contract" : {
+    "bc_provider_url" : "http://127.0.0.1:8545",
+    "chain_id" : 5777,
+    "max_gas" : 2000000,
+    "meeting_contract_path" : "MeetingContract/build/contracts/MeetingContract.json"
+  }
+}

@@ -14,3 +14,14 @@ def get_config():
 
     return {}
 
+
+def get_test_config():
+    try:
+        with open('tests/test_config.json') as f:
+            return json.load(f)
+    except IOError as error:
+        log.error('Error while reading config file')
+        log.error(error)
+
+    return {}
+
