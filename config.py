@@ -1,12 +1,15 @@
 import json
 import log as logger
+import os
 
 log = logger.get_logger('config.py')
 
 
 def get_config():
+    filename = os.getenv('MDT_SERVER_CONFIG', 'config') + '.json'
+    log.debug("Using config file " + filename)
     try:
-        with open('config.json') as f:
+        with open(filename) as f:
             return json.load(f)
     except IOError as error:
         log.error('Error while reading config file')

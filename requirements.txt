@@ -1,7 +1,8 @@
 PyJWT
 web3
 bencode.py
-websockets
+pymongo
+websockets<7.0.0,>=6.0.0
 attrs==19.1.0
 Click==7.0
 ecdsa==0.13

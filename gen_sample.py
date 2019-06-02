@@ -88,6 +88,10 @@ class Sample:
         self.db.insert_staff(data)
         return acct.address
 
+    # This is the sample user from the DeeID app (useful for debugging)
+    def add_dee_id_user(self):
+        self.db.insert_staff(deeid_user_a)
+
     def gen_meeting_data(self):
         mid = str(uuid.uuid4())
         patient_ids = [patient["_id"] for patient in self.db.get_all_patients()]
@@ -124,6 +128,9 @@ if __name__ == '__main__':
     s = Sample(c)
     for i in range(50):
         s.gen_patient_data()
+
+    print("Adding DeeID User")
+    s.add_dee_id_user()
 
     print("[public, private]")
     for i in range(50):

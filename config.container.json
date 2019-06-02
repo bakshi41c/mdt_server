@@ -1,6 +1,6 @@
 {
   "database" : {
-    "ip": "localhost",
+    "ip": "db",
     "port" : "27017",
     "db_name" : "mdt_meetings"
   },
@@ -9,17 +9,17 @@
     "deeid_abi_path" : "deeid_abi.json"
   },
   "smart_contract" : {
-    "bc_provider_url" : "http://127.0.0.1:8545",
+    "bc_provider_url" : "http://ganache:8545",
     "chain_id" : 5777,
     "max_gas" : 2000000,
     "meeting_contract_path" : "MeetingContract/build/contracts/MeetingContract.json"
   },
   "meeting_server" : {
-    "host" : "localhost",
+    "host" : "0.0.0.0",
     "port" : 51235
   },
   "rest_api_server" : {
-    "host" : "localhost",
+    "host" : "0.0.0.0",
     "port" : 51234
   }
 }

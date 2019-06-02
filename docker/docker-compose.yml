@@ -1,0 +1,60 @@
+version: "3.7"
+services:
+  db:
+    image: mongo
+    ports:
+      - "27017"
+    networks:
+      - backend
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  mdt-rest-server:
+    image: mdt_rest_api_server
+    ports:
+      - "51234:51234"
+    networks:
+      - backend
+    depends_on:
+      - db
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  mdt-meeting-server:
+    image: mdt_meeting_server
+    ports:
+      - "51235:51235"
+    networks:
+      - backend
+    depends_on:
+      - db
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  ganache:
+    image: trufflesuite/ganache-cli
+    ports:
+      - "8545:8545"
+    networks:
+      - backend
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  ui-server:
+    image: mdt_ui
+    ports:
+      - "80:4200"
+    networks:
+      - frontend
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+networks:
+  frontend:
+  backend:
+

@@ -17,6 +17,8 @@ CORS(app)
 jwt_exp = 21600 # 6 hours to cover a MDT meeting - Future: Expire every 15 minutes, let client refresh
 config = config.get_config()
 db = Database(config["database"]["db_name"], config["database"]["ip"], config["database"]["port"])
+host = config["rest_api_server"]["host"]
+port = config["rest_api_server"]["port"]
 
 log = logpy.get_logger('mdt_server_http.log')
 auth = Auth(config)
@@ -287,7 +289,7 @@ def get_events_for_meeting(meeting_id):
 
 
 if __name__ == '__main__':
-    app.run(host="localhost", port=51234)
+    app.run(host=host, port=port)
 
 
 ##############################################

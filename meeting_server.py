@@ -29,6 +29,9 @@ socketio = SocketIO(app)
 CORS(app)
 config = config.get_config()
 db = Database(config["database"]["db_name"], config["database"]["ip"], config["database"]["port"])
+host = config["meeting_server"]["host"]
+port = config["meeting_server"]["port"]
+
 log = logger.get_logger('web_server_socketio')
 timestamp_tolerance = 10  # seconds
 ongoing_meetings = {}
@@ -967,4 +970,4 @@ def room_message(event_string):
 
 
 if __name__ == '__main__':
-    socketio.run(app, host="localhost", port=51235)
+    socketio.run(app, host=host, port=port)
