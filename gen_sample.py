@@ -136,6 +136,6 @@ if __name__ == '__main__':
     for i in range(50):
         s.gen_staff_data()
 
-    s.gen_meeting_data()
-    s.gen_meeting_data()
+    # ADD meeting data if needed
+    # s.gen_meeting_data()
 
