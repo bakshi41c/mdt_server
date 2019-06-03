@@ -42,7 +42,7 @@ class Auth:
         event_dict['by'] = self.get_public_key_as_hex_string()
         msg = bencode.encode(event_dict).decode("utf-8")
         msg_hash = defunct_hash_message(text=msg)
-        signed_message = w3.eth.account.signHash(msg_hash, private_key=self.server_private_key)
+        signed_message = self.w3.eth.account.signHash(msg_hash, private_key=self.server_private_key)
         event_dict["_id"] = signed_message['signature'].hex()
         return event_dict
 
@@ -64,7 +64,7 @@ class Auth:
         :return: Ethereum address as str
         """
         msg_hash = defunct_hash_message(text=msg)
-        eth_account_addr = w3.eth.account.recoverHash(msg_hash, signature=signature)
+        eth_account_addr = self.w3.eth.account.recoverHash(msg_hash, signature=signature)
         return eth_account_addr.lower()
 
     def get_public_key_as_hex_string(self):
@@ -79,8 +79,8 @@ class Auth:
         """
         # TODO: Test - Currently untested
         return True
-        w3.eth.defaultAccount = self.server_eth_address
-        dee_id_contract = w3.eth.contract(address=deeid_contract, abi=self.dee_id_abi,)
+        self.w3.eth.defaultAccount = self.server_eth_address
+        dee_id_contract = self.w3.eth.contract(address=deeid_contract, abi=self.dee_id_abi,)
         len_k = dee_id_contract.functions.lenKeys().call()
 
         for i in range(0, len_k):

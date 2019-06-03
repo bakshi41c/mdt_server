@@ -174,7 +174,7 @@ def delete_meeting(meeting_id):
     if meeting.ended:
         return "Forbidden, Meeting has ended", 403
 
-    for patient_id in meeting["patients"]:  # Delete all meeting specific patient data
+    for patient_id in meeting.patients:  # Delete all meeting specific patient data
         db.delete_patient_meeting_data(meeting_id, patient_id)
     db.delete_meeting(meeting_id)
     log.info("Deleted meeting: " + meeting_id)

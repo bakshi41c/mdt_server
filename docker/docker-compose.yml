@@ -40,6 +40,7 @@ services:
       - "8545:8545"
     networks:
       - backend
+    command: -d
     deploy:
       restart_policy:
         condition: on-failure

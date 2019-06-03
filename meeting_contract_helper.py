@@ -37,8 +37,8 @@ class MeetingContractHelper:
             self.contract_abi = contract_json['abi']
             self.contract_bytecode = contract_json['bytecode']
 
+        log.debug('ETH provider URL: ' + self.block_chain_provider_url)
         self.w3 = Web3(Web3.HTTPProvider(self.block_chain_provider_url))
-
 
     def new_meeting_contract(self, meeting : Meeting):
         """
@@ -46,8 +46,8 @@ class MeetingContractHelper:
         :param meeting: the meeting object associated with contract
         :return: Ethereum address of the contract
         """
-        contract = w3.eth.contract(abi=self.contract_abi, bytecode=self.contract_bytecode)
-        nonce = w3.eth.getTransactionCount(w3.toChecksumAddress('0x' + self.server_eth_address))
+        contract = self.w3.eth.contract(abi=self.contract_abi, bytecode=self.contract_bytecode)
+        nonce = self.w3.eth.getTransactionCount(self.w3.toChecksumAddress('0x' + self.server_eth_address))
         log.debug('Nonce: ' + str(nonce))
         staff_dee_ids = [Web3.toChecksumAddress(staff_dee_id) for staff_dee_id in meeting.staff]
         print(staff_dee_ids)
@@ -56,12 +56,11 @@ class MeetingContractHelper:
             'chainId': self.chain_id,
             'gas': 2000000
         })
-        signed = w3.eth.account.signTransaction(contract_txn, private_key=self.server_private_key)
-        contract_txn_hash = w3.eth.sendRawTransaction(signed.rawTransaction)
+        signed = self.w3.eth.account.signTransaction(contract_txn, private_key=self.server_private_key)
+        contract_txn_hash = self.w3.eth.sendRawTransaction(signed.rawTransaction)
         log.debug('Waiting for contract to be mined...')
-        tx_receipt = w3.eth.waitForTransactionReceipt(contract_txn_hash)
+        tx_receipt = self.w3.eth.waitForTransactionReceipt(contract_txn_hash)
         return str(tx_receipt.contractAddress)
-
 
     def set_event_hash(self, meeting : Meeting, start_event_hash : str, end_event_hash : str):
         """
@@ -71,18 +70,18 @@ class MeetingContractHelper:
         :param end_event_hash: the id of ACK_END event
         :return: the TX reciept
         """
-        mdt_meeting = w3.eth.contract(
+        mdt_meeting = self.w3.eth.contract(
             address=meeting.contract_id,
             abi=self.contract_abi,
         )
-        nonce = w3.eth.getTransactionCount(w3.toChecksumAddress('0x' + self.server_eth_address))
+        nonce = self.w3.eth.getTransactionCount(self.w3.toChecksumAddress('0x' + self.server_eth_address))
         f_call_txn = mdt_meeting.functions.setEvents(start_event_hash, end_event_hash).buildTransaction({
             'nonce': nonce,
             'chainId': self.chain_id,
             'gas': 2000000
         })
-        signed = w3.eth.account.signTransaction(f_call_txn, private_key=self.server_private_key)
-        contract_txn_hash = w3.eth.sendRawTransaction(signed.rawTransaction)
+        signed = self.w3.eth.account.signTransaction(f_call_txn, private_key=self.server_private_key)
+        contract_txn_hash = self.w3.eth.sendRawTransaction(signed.rawTransaction)
         print('Waiting for TX to be mined...')
-        tx_receipt = w3.eth.waitForTransactionReceipt(contract_txn_hash)
+        tx_receipt = self.w3.eth.waitForTransactionReceipt(contract_txn_hash)
         return tx_receipt
