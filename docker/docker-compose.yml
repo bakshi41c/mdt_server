@@ -11,7 +11,7 @@ services:
         condition: on-failure
 
   mdt-rest-server:
-    image: mdt_rest_api_server
+    image: bakshi41c/mdt_rest_api_server
     ports:
       - "51234:51234"
     networks:
@@ -23,7 +23,7 @@ services:
         condition: on-failure
 
   mdt-meeting-server:
-    image: mdt_meeting_server
+    image: bakshi41c/mdt_meeting_server
     ports:
       - "51235:51235"
     networks:
@@ -45,7 +45,7 @@ services:
         condition: on-failure
 
   ui-server:
-    image: mdt_ui
+    image: bakshi41c/mdt_ui
     ports:
       - "80:4200"
     networks:

@@ -1,6 +1,6 @@
 FROM python:3.7-alpine
 
-COPY setup/docker /mdt_server
+COPY . /mdt_server
 WORKDIR /mdt_server
 
 RUN apk add build-base
