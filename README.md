@@ -1,5 +1,5 @@
 # C-meet backend
-This is the repo for the backend of the c-meet system. <br>
+This is the repo for the backend of the c-meet system. (Dissertation Project: [link](https://drive.google.com/file/d/1si09u7KxHz8oiF73UrSBFlKJi3LD2LWG/view?usp=sharing)) <br>
 The main components:
  - `rest_api_server.py` : handles all REST API requests from the frontend.
  - `meeting_server.py`: enables frontend clients to hold meetings.
